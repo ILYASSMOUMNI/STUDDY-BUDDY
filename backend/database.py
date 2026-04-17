@@ -1,11 +1,12 @@
-# backend/database.py
-# Gestion SQLite : étudiants, sessions, résultats quiz, lacunes
+"""SQLite helpers for StudyBuddy."""
 
-import sqlite3
+from __future__ import annotations
+
 import json
-from datetime import datetime
-from pathlib import Path
 import os
+import sqlite3
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,6 +17,9 @@ def get_connection():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -24,7 +28,6 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # Table étudiants
     c.execute("""
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,7 +37,6 @@ def init_db():
         )
     """)
 
-    # Table cours uploadés
     c.execute("""
         CREATE TABLE IF NOT EXISTS courses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +48,6 @@ def init_db():
         )
     """)
 
-    # Table sessions de chat
     c.execute("""
         CREATE TABLE IF NOT EXISTS chat_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +60,6 @@ def init_db():
         )
     """)
 
-    # Table résultats de quiz
     c.execute("""
         CREATE TABLE IF NOT EXISTS quiz_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +77,6 @@ def init_db():
         )
     """)
 
-    # Table lacunes détectées
     c.execute("""
         CREATE TABLE IF NOT EXISTS weaknesses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,12 +92,18 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print("✅ Base de données initialisée.")
 
 
-# ──────────────────────────────────────────────
-#  Helpers étudiants
-# ──────────────────────────────────────────────
+def _json_dumps(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _json_loads(raw):
+    try:
+        return json.loads(raw or "[]")
+    except Exception:
+        return []
+
 
 def create_student(name: str, email: str) -> int:
     conn = get_connection()
@@ -133,27 +138,23 @@ def get_all_students():
     return [dict(r) for r in rows]
 
 
-# ──────────────────────────────────────────────
-#  Helpers cours
-# ──────────────────────────────────────────────
-
 def save_course(title: str, filename: str, filiere: str, num_chunks: int) -> int:
     conn = get_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO courses (title, filename, filiere, num_chunks) VALUES (?, ?, ?, ?)",
-        (title, filename, filiere, num_chunks)
+        (title, filename, filiere, num_chunks),
     )
     conn.commit()
-    lid = c.lastrowid
+    course_id = c.lastrowid
     conn.close()
-    return lid
+    return course_id
 
 
 def get_all_courses():
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT * FROM courses ORDER BY uploaded_at DESC")
+    c.execute("SELECT * FROM courses ORDER BY uploaded_at DESC, id DESC")
     rows = c.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -168,9 +169,67 @@ def get_course_by_id(course_id: int):
     return dict(row) if row else None
 
 
-# ──────────────────────────────────────────────
-#  Helpers quiz & lacunes
-# ──────────────────────────────────────────────
+def save_chat_session(student_id: int, course_id: int | None, messages):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT id
+        FROM chat_sessions
+        WHERE student_id = ?
+          AND ((course_id = ?) OR (course_id IS NULL AND ? IS NULL))
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+    """, (student_id, course_id, course_id))
+    row = c.fetchone()
+    payload = _json_dumps(messages)
+
+    if row:
+        c.execute("UPDATE chat_sessions SET messages = ? WHERE id = ?", (payload, row["id"]))
+        session_id = row["id"]
+    else:
+        c.execute("""
+            INSERT INTO chat_sessions (student_id, course_id, messages)
+            VALUES (?, ?, ?)
+        """, (student_id, course_id, payload))
+        session_id = c.lastrowid
+
+    conn.commit()
+    conn.close()
+    return session_id
+
+
+def get_latest_chat_session(student_id: int, course_id: int = None):
+    conn = get_connection()
+    c = conn.cursor()
+
+    if course_id is None:
+        c.execute("""
+            SELECT cs.*, c.title AS course_title
+            FROM chat_sessions cs
+            LEFT JOIN courses c ON cs.course_id = c.id
+            WHERE cs.student_id = ?
+            ORDER BY cs.started_at DESC, cs.id DESC
+            LIMIT 1
+        """, (student_id,))
+    else:
+        c.execute("""
+            SELECT cs.*, c.title AS course_title
+            FROM chat_sessions cs
+            LEFT JOIN courses c ON cs.course_id = c.id
+            WHERE cs.student_id = ? AND cs.course_id = ?
+            ORDER BY cs.started_at DESC, cs.id DESC
+            LIMIT 1
+        """, (student_id, course_id))
+
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return None
+
+    result = dict(row)
+    result["messages"] = _json_loads(result.get("messages"))
+    return result
+
 
 def save_quiz_result(student_id, course_id, concept, question, student_answer, correct_answer, is_correct, score):
     conn = get_connection()
@@ -192,18 +251,22 @@ def _increment_weakness(student_id, course_id, concept):
     c = conn.cursor()
     c.execute("""
         SELECT id FROM weaknesses
-        WHERE student_id=? AND course_id=? AND concept=?
+        WHERE student_id = ? AND course_id = ? AND concept = ?
     """, (student_id, course_id, concept))
     row = c.fetchone()
+
     if row:
         c.execute("""
-            UPDATE weaknesses SET fail_count = fail_count + 1, last_seen = CURRENT_TIMESTAMP
+            UPDATE weaknesses
+            SET fail_count = fail_count + 1, last_seen = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (row["id"],))
     else:
         c.execute("""
-            INSERT INTO weaknesses (student_id, course_id, concept) VALUES (?, ?, ?)
+            INSERT INTO weaknesses (student_id, course_id, concept)
+            VALUES (?, ?, ?)
         """, (student_id, course_id, concept))
+
     conn.commit()
     conn.close()
 
@@ -213,15 +276,18 @@ def get_weaknesses(student_id: int, course_id: int = None):
     c = conn.cursor()
     if course_id:
         c.execute("""
-            SELECT concept, fail_count FROM weaknesses
-            WHERE student_id=? AND course_id=?
-            ORDER BY fail_count DESC
+            SELECT concept, fail_count, course_id, last_seen
+            FROM weaknesses
+            WHERE student_id = ? AND course_id = ?
+            ORDER BY fail_count DESC, last_seen DESC
         """, (student_id, course_id))
     else:
         c.execute("""
-            SELECT concept, SUM(fail_count) as fail_count FROM weaknesses
-            WHERE student_id=?
-            GROUP BY concept ORDER BY fail_count DESC
+            SELECT concept, SUM(fail_count) AS fail_count, MAX(last_seen) AS last_seen
+            FROM weaknesses
+            WHERE student_id = ?
+            GROUP BY concept
+            ORDER BY fail_count DESC, last_seen DESC
         """, (student_id,))
     rows = c.fetchall()
     conn.close()
@@ -232,18 +298,17 @@ def get_student_stats(student_id: int):
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute("SELECT COUNT(*) as total FROM quiz_results WHERE student_id=?", (student_id,))
+    c.execute("SELECT COUNT(*) AS total FROM quiz_results WHERE student_id = ?", (student_id,))
     total = c.fetchone()["total"]
 
-    c.execute("SELECT COUNT(*) as correct FROM quiz_results WHERE student_id=? AND is_correct=1", (student_id,))
+    c.execute("SELECT COUNT(*) AS correct FROM quiz_results WHERE student_id = ? AND is_correct = 1", (student_id,))
     correct = c.fetchone()["correct"]
 
     c.execute("""
-        SELECT c.title, COUNT(qr.id) as attempts,
-               SUM(qr.is_correct) as correct_count
+        SELECT c.title, COUNT(qr.id) AS attempts, SUM(qr.is_correct) AS correct_count
         FROM quiz_results qr
         JOIN courses c ON qr.course_id = c.id
-        WHERE qr.student_id=?
+        WHERE qr.student_id = ?
         GROUP BY c.id
     """, (student_id,))
     by_course = [dict(r) for r in c.fetchall()]
@@ -253,8 +318,152 @@ def get_student_stats(student_id: int):
         "total_questions": total,
         "correct_answers": correct,
         "score_global": round((correct / total * 100) if total > 0 else 0, 1),
-        "by_course": by_course
+        "by_course": by_course,
     }
+
+
+def _get_last_course_score(conn, student_id: int, course_id: int):
+    c = conn.cursor()
+    c.execute("""
+        SELECT ROUND(SUM(is_correct) * 100.0 / COUNT(*), 1) AS score_pct
+        FROM quiz_results
+        WHERE student_id = ? AND course_id = ? AND taken_at = (
+            SELECT MAX(taken_at)
+            FROM quiz_results
+            WHERE student_id = ? AND course_id = ?
+        )
+    """, (student_id, course_id, student_id, course_id))
+    row = c.fetchone()
+    return row["score_pct"] if row and row["score_pct"] is not None else None
+
+
+def get_course_progress(student_id: int):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT
+            c.id,
+            c.title,
+            c.filename,
+            c.num_chunks,
+            c.uploaded_at,
+            COUNT(qr.id) AS attempts,
+            COALESCE(SUM(qr.is_correct), 0) AS correct_count,
+            MAX(qr.taken_at) AS last_taken_at,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM weaknesses w
+                WHERE w.student_id = ? AND w.course_id = c.id
+            ), 0) AS weakness_count
+        FROM courses c
+        LEFT JOIN quiz_results qr
+            ON qr.course_id = c.id AND qr.student_id = ?
+        GROUP BY c.id
+        ORDER BY c.uploaded_at DESC, c.id DESC
+    """, (student_id, student_id))
+    rows = [dict(r) for r in c.fetchall()]
+
+    for row in rows:
+        attempts = row["attempts"] or 0
+        correct = row["correct_count"] or 0
+        row["score_pct"] = round((correct / attempts * 100) if attempts else 0, 1)
+        row["last_score"] = _get_last_course_score(conn, student_id, row["id"])
+
+    conn.close()
+    return rows
+
+
+def get_recent_activity(student_id: int, limit: int = 10):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT *
+        FROM (
+            SELECT
+                'quiz' AS activity_type,
+                qr.taken_at AS created_at,
+                qr.course_id,
+                c.title AS course_title,
+                qr.concept,
+                qr.is_correct,
+                NULL AS session_id
+            FROM quiz_results qr
+            LEFT JOIN courses c ON qr.course_id = c.id
+            WHERE qr.student_id = ?
+
+            UNION ALL
+
+            SELECT
+                'chat' AS activity_type,
+                cs.started_at AS created_at,
+                cs.course_id,
+                c.title AS course_title,
+                NULL AS concept,
+                NULL AS is_correct,
+                cs.id AS session_id
+            FROM chat_sessions cs
+            LEFT JOIN courses c ON cs.course_id = c.id
+            WHERE cs.student_id = ?
+        )
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (student_id, student_id, limit))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_recommended_actions(student_id: int):
+    actions = []
+
+    latest_chat = get_latest_chat_session(student_id)
+    if latest_chat and latest_chat.get("course_id"):
+        actions.append({
+            "type": "resume_chat",
+            "course_id": latest_chat["course_id"],
+            "course_title": latest_chat.get("course_title"),
+            "session_id": latest_chat["id"],
+        })
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT w.course_id, c.title AS course_title, w.concept, w.fail_count
+        FROM weaknesses w
+        LEFT JOIN courses c ON w.course_id = c.id
+        WHERE w.student_id = ?
+        ORDER BY w.fail_count DESC, w.last_seen DESC
+        LIMIT 1
+    """, (student_id,))
+    weakness = c.fetchone()
+    conn.close()
+
+    if weakness:
+        actions.append({
+            "type": "targeted_quiz",
+            "course_id": weakness["course_id"],
+            "course_title": weakness["course_title"],
+            "concept": weakness["concept"],
+            "fail_count": weakness["fail_count"],
+        })
+        actions.append({
+            "type": "review_concept",
+            "course_id": weakness["course_id"],
+            "course_title": weakness["course_title"],
+            "concept": weakness["concept"],
+            "fail_count": weakness["fail_count"],
+        })
+
+    progress = get_course_progress(student_id)
+    least_started = next((row for row in progress if row["attempts"] == 0), None)
+    if least_started:
+        actions.append({
+            "type": "start_quiz",
+            "course_id": least_started["id"],
+            "course_title": least_started["title"],
+        })
+
+    return actions
 
 
 if __name__ == "__main__":
