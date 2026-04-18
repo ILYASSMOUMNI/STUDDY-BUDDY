@@ -1,0 +1,244 @@
+COURS : DEEP LEARNING & RÉSEAUX DE NEURONES
+Filière : IA & Data Science — EMSI Maroc
+================================================
+
+CHAPITRE 1 : FONDEMENTS DES RÉSEAUX DE NEURONES ARTIFICIELS (ANN)
+
+1.1 Le Neurone Artificiel (Perceptron)
+Le neurone artificiel s'inspire du neurone biologique. Il calcule une combinaison linéaire pondérée de ses entrées, puis applique une fonction d'activation.
+
+Formule : y = f(Σᵢ wᵢxᵢ + b)
+- xᵢ : entrées (features)
+- wᵢ : poids synaptiques (appris pendant l'entraînement)
+- b : biais (décalage)
+- f : fonction d'activation non-linéaire
+
+1.2 Fonctions d'activation
+Les fonctions d'activation introduisent la non-linéarité nécessaire pour apprendre des représentations complexes.
+
+- Sigmoïde : σ(x) = 1/(1+e^-x)  →  sortie ∈ [0,1], utilisée pour la classification binaire finale
+  Problème : gradient qui s'évanouit (vanishing gradient) pour |x| grand
+
+- Tanh : tanh(x) = (e^x - e^-x)/(e^x + e^-x)  →  sortie ∈ [-1,1], centré en 0
+  Mieux que sigmoïde mais toujours sensible au vanishing gradient
+
+- ReLU (Rectified Linear Unit) : f(x) = max(0, x)  →  la plus utilisée dans les couches cachées
+  Avantage : calcul simple, pas de vanishing gradient pour x > 0
+  Problème : "dying ReLU" (neurones bloqués à 0)
+
+- Leaky ReLU : f(x) = max(0.01x, x)  →  corrige le dying ReLU
+
+- ELU / SELU : variantes améliorées de ReLU
+
+- Softmax : f(xᵢ) = e^xᵢ / Σⱼ e^xⱼ  →  utilisé en sortie pour classification multi-classes (somme = 1)
+
+1.3 Architecture d'un Réseau de Neurones Profond (MLP)
+Un réseau MLP (Multi-Layer Perceptron) est organisé en couches :
+
+- Couche d'entrée : une unité par feature
+- Couches cachées (hidden layers) : extraient des représentations hiérarchiques
+- Couche de sortie : une unité par classe (classification) ou une unité (régression)
+
+Profondeur : nombre de couches cachées
+Largeur : nombre de neurones par couche
+Le terme "profond" (deep) désigne des réseaux avec plusieurs couches cachées.
+
+CHAPITRE 2 : ENTRAÎNEMENT DES RÉSEAUX DE NEURONES
+
+2.1 Fonction de coût (Loss Function)
+- Régression : MSE, Huber Loss
+- Classification binaire : Binary Cross-Entropy  →  L = -[y·log(ŷ) + (1-y)·log(1-ŷ)]
+- Classification multi-classes : Categorical Cross-Entropy  →  L = -Σᵢ yᵢ·log(ŷᵢ)
+
+2.2 Rétropropagation (Backpropagation)
+L'algorithme de rétropropagation calcule le gradient de la fonction de coût par rapport à chaque poids, en utilisant la règle de la chaîne (chain rule).
+
+Étapes :
+1. Propagation avant (forward pass) : calcul de la sortie et de la perte
+2. Propagation arrière (backward pass) : calcul des gradients couche par couche
+3. Mise à jour des poids : w ← w - η·∂L/∂w
+
+2.3 Descente de Gradient et Optimiseurs
+- SGD (Stochastic Gradient Descent) : mise à jour sur chaque exemple ou mini-batch
+  w ← w - η·∇L(w)  avec η = taux d'apprentissage (learning rate)
+
+- SGD + Momentum : accumule la vélocité des gradients passés pour accélérer la convergence
+  v ← β·v - η·∇L   ;   w ← w + v
+
+- Adam (Adaptive Moment Estimation) : optimiseur le plus populaire
+  Combine momentum (1er moment) et variance adaptative (2e moment)
+  Hyperparamètres : α=0.001, β₁=0.9, β₂=0.999, ε=10⁻⁸
+
+- RMSprop : adapte le taux d'apprentissage par feature
+
+- AdaGrad : réduit le LR pour les paramètres fréquemment mis à jour
+
+2.4 Hyperparamètres clés
+- Learning rate (η) : trop grand → diverge, trop petit → lent à converger
+- Batch size : 32, 64, 128, 256 (compromis entre bruit et vitesse)
+- Epochs : nombre de passes complètes sur les données
+- Dropout rate : fraction de neurones désactivés à chaque batch (typiquement 0.2-0.5)
+
+CHAPITRE 3 : RÉSEAUX DE NEURONES CONVOLUTIFS (CNN)
+
+3.1 Motivation
+Les CNN sont spécialisés pour les données à structure spatiale (images, audio, séries temporelles).
+Ils exploitent la localité et l'invariance par translation.
+
+3.2 Opération de Convolution
+Une couche convolutive applique des filtres (kernels) glissants sur l'entrée :
+- Filtre : matrice de poids K×K (ex: 3×3, 5×5)
+- Feature map : carte d'activation résultante
+- Paramètres : moins que le MLP grâce au partage de poids (weight sharing)
+- Stride : pas de déplacement du filtre
+- Padding (same/valid) : préserve ou réduit les dimensions spatiales
+
+3.3 Architecture typique d'un CNN
+Input → [Conv2D + ReLU → MaxPool]xN → Flatten → Dense → Softmax
+
+Couches principales :
+- Conv2D : extraction de features locales (bords, textures, formes)
+- Pooling (MaxPool, AvgPool) : sous-échantillonnage, réduction dimensionnelle, invariance
+- Batch Normalization : normalise les activations → convergence plus rapide et stable
+- Flatten : aplatit les feature maps en vecteur
+- Dense (Fully Connected) : classification finale
+
+3.4 Architectures CNN célèbres
+- LeNet-5 (1998) : premier CNN, reconnaissance de chiffres MNIST
+- AlexNet (2012) : vainqueur ImageNet, popularise le Deep Learning, utilise ReLU et Dropout
+- VGG-16/19 (2014) : empile des convolutions 3×3, très profond
+- ResNet (2015) : connexions résiduelles (skip connections) → entraîne des réseaux de 100+ couches
+  Formule : H(x) = F(x) + x  (la sortie apprend le résidu, pas la transformation complète)
+- Inception/GoogLeNet : modules parallèles avec différentes tailles de filtres
+- EfficientNet : optimise simultanément profondeur, largeur et résolution
+
+3.5 Transfer Learning avec CNN
+- Prendre un CNN pré-entraîné (ex: ResNet50 sur ImageNet)
+- Geler les couches convolutives (feature extractor)
+- Remplacer et entraîner uniquement les couches Dense finales sur la nouvelle tâche
+- Fine-tuning : dégeler progressivement les dernières couches pour les adapter
+
+CHAPITRE 4 : RÉSEAUX DE NEURONES RÉCURRENTS (RNN)
+
+4.1 Motivation
+Les RNN traitent les séquences en maintenant un état caché (mémoire) à travers le temps.
+Adaptés pour : texte, audio, séries temporelles, vidéo.
+
+4.2 Architecture RNN standard
+hₜ = f(Wₓₓ·xₜ + Wₕₕ·hₜ₋₁ + b)  avec f = tanh typiquement
+- hₜ : état caché au temps t
+- xₜ : entrée au temps t
+- Wₓₓ, Wₕₕ : matrices de poids (partagées dans le temps)
+
+Problème : vanishing/exploding gradient sur les longues séquences
+
+4.3 LSTM (Long Short-Term Memory)
+Architecture proposée par Hochreiter & Schmidhuber (1997) pour résoudre le vanishing gradient.
+
+Composants (gates) :
+- Porte d'oubli (forget gate) : fₜ = σ(Wf·[hₜ₋₁, xₜ] + bf)  → que garder de la mémoire
+- Porte d'entrée (input gate) : iₜ = σ(Wi·[hₜ₋₁, xₜ] + bi)  → que mémoriser
+- Porte de sortie (output gate) : oₜ = σ(Wo·[hₜ₋₁, xₜ] + bo)  → que sortir
+- Cellule mémoire : Cₜ = fₜ⊙Cₜ₋₁ + iₜ⊙tanh(Wc·[hₜ₋₁,xₜ]+bc)
+- État caché : hₜ = oₜ⊙tanh(Cₜ)
+
+4.4 GRU (Gated Recurrent Unit)
+Version simplifiée du LSTM avec 2 portes au lieu de 3 :
+- Porte de réinitialisation (reset gate)
+- Porte de mise à jour (update gate)
+Souvent aussi performant que LSTM mais plus rapide à entraîner.
+
+4.5 RNN Bidirectionnel
+Traite la séquence dans les deux directions (gauche→droite et droite→gauche).
+Utile en NLP pour capturer le contexte avant ET après un mot.
+
+CHAPITRE 5 : MÉCANISME D'ATTENTION ET TRANSFORMERS
+
+5.1 Le mécanisme d'attention (Attention Mechanism)
+Proposé par Bahdanau et al. (2015) pour les modèles seq2seq.
+L'attention permet au décodeur de "regarder" toutes les positions de l'encodeur, pondérées par leur pertinence.
+
+Score d'attention : eᵢⱼ = score(sᵢ₋₁, hⱼ)
+Poids d'attention : αᵢⱼ = softmax(eᵢⱼ)
+Contexte : cᵢ = Σⱼ αᵢⱼ·hⱼ
+
+5.2 Self-Attention (Attention Propre)
+Dans les Transformers, l'attention est calculée entre tous les tokens d'une même séquence.
+
+Formule : Attention(Q, K, V) = softmax(QKᵀ / √dₖ) · V
+- Q (Query), K (Key), V (Value) : projections linéaires de l'entrée
+- √dₖ : facteur de mise à l'échelle pour éviter les gradients trop petits
+
+5.3 Architecture Transformer (Vaswani et al., 2017)
+"Attention is All You Need"
+
+Encodeur :
+- Multi-Head Self-Attention : plusieurs têtes d'attention en parallèle
+- Feed-Forward Network
+- Couches de normalisation (LayerNorm)
+- Connexions résiduelles
+
+Décodeur :
+- Masked Self-Attention (masque le futur)
+- Cross-Attention (entre décodeur et encodeur)
+- Feed-Forward Network
+
+Encodage positionnel : information sur la position des tokens (sinusoïdal ou appris)
+
+5.4 Modèles pré-entraînés basés Transformer
+- BERT (Bidirectional Encoder Representations from Transformers) : encodeur, pré-entraîné sur Masked LM + NSP
+- GPT (Generative Pre-trained Transformer) : décodeur, génération de texte autorégressif
+- T5 (Text-to-Text Transfer Transformer) : encode tout en texte → texte
+- RoBERTa, ALBERT, DistilBERT : optimisations de BERT
+
+CHAPITRE 6 : TECHNIQUES D'ENTRAÎNEMENT AVANCÉES
+
+6.1 Régularisation en Deep Learning
+- Dropout : désactive p% des neurones aléatoirement → réduit l'overfitting (Srivastava et al., 2014)
+- Batch Normalization : normalise les activations par batch → accélère l'entraînement, effet régularisant
+- Weight Decay (L2) : pénalise les grands poids
+- Data Augmentation : transformations aléatoires (rotation, crop, flip) → augmente la diversité
+
+6.2 Initialisation des poids
+- Initialisation aléatoire : Xavier/Glorot (pour sigmoïde/tanh), He (pour ReLU)
+- Mauvaise initialisation → vanishing ou exploding gradient dès le départ
+
+6.3 Learning Rate Scheduling
+- Step Decay : divise le LR à intervalles fixes
+- Cosine Annealing : LR suit un cycle en cosinus
+- ReduceLROnPlateau : réduit le LR quand la métrique stagne
+- Warm-up : augmentation progressive du LR au début
+
+6.4 Frameworks Deep Learning
+- PyTorch : très utilisé en recherche, API dynamique (eager mode), flexible
+- TensorFlow / Keras : très utilisé en production, API de haut niveau avec Keras
+- JAX : calcul numérique différentiable, très rapide (XLA)
+
+Exemple Keras (CNN pour classification MNIST) :
+  from tensorflow.keras.models import Sequential
+  from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+
+  model = Sequential([
+      Conv2D(32, (3,3), activation='relu', input_shape=(28,28,1)),
+      BatchNormalization(),
+      MaxPooling2D(2,2),
+      Conv2D(64, (3,3), activation='relu'),
+      MaxPooling2D(2,2),
+      Flatten(),
+      Dense(128, activation='relu'),
+      Dropout(0.4),
+      Dense(10, activation='softmax')
+  ])
+
+  model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+  history = model.fit(X_train, y_train, epochs=20, batch_size=64,
+                      validation_split=0.15, callbacks=[early_stopping])
+
+RÉSUMÉ DES CONCEPTS CLÉS
+- Neurone : combinaison linéaire + activation non-linéaire
+- ReLU : activation la plus courante dans les couches cachées
+- Backpropagation + Adam : algorithme standard d'entraînement
+- CNN : spécialisé images (convolution, pooling, transfer learning)
+- RNN/LSTM/GRU : spécialisé séquences (texte, audio)
+- Attention + Transformer : révolution NLP (BERT, GPT)
+- Régularisation : Dropout, BatchNorm, Data Augmentation

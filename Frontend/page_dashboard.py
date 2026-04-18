@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 import pandas as pd
 from backend.database import (get_student_stats, get_weaknesses,
                                get_all_courses, get_connection)
+from backend.ai_tutor import generate_study_plan, generate_progress_report
+from backend.email_service import send_weekly_summary, is_configured as email_configured
 from frontend.design_system import C, page_title, kpi_card, badge, spacer, divider
 
 
@@ -19,7 +21,12 @@ _LAYOUT = dict(
 
 
 def render_dashboard():
-    page_title("📊 Analytics", "Track your learning progress and identify areas for improvement.")
+    lang  = st.session_state.get("language", "fr")
+    title = "📊 Analytiques" if lang == "fr" else "📊 Analytics"
+    sub   = ("Suivez votre progression et identifiez vos points faibles."
+             if lang == "fr"
+             else "Track your learning progress and identify areas for improvement.")
+    page_title(title, sub)
 
     sid   = st.session_state.student_id
     stats = get_student_stats(sid)
@@ -222,28 +229,97 @@ def render_dashboard():
     # ── Recommendations ───────────────────────────────────────
     if weak:
         spacer(24)
+        rec_label = "Pratique recommandée" if lang == "fr" else "Recommended practice"
         st.markdown(f"""
 <p style="font-size:0.72rem;font-weight:600;letter-spacing:0.08em;
           text-transform:uppercase;color:{C["text_3"]};margin-bottom:12px;">
-    Recommended practice
+    {rec_label}
 </p>""", unsafe_allow_html=True)
 
         cols = st.columns(min(len(weak[:3]), 3))
         for i, w in enumerate(weak[:3]):
             with cols[i]:
-                urgency = "High priority" if w["fail_count"] >= 3 else "Review"
+                urgency = ("Priorité haute" if lang == "fr" else "High priority") if w["fail_count"] >= 3 else ("À revoir" if lang == "fr" else "Review")
                 bc = "red" if w["fail_count"] >= 3 else "orange"
+                mistakes_txt = f"{w['fail_count']} erreur(s)" if lang == "fr" else f"{w['fail_count']} mistake(s)"
                 st.markdown(f"""
 <div style="background:{C["surface"]};border:1px solid {C["border"]};
             border-radius:10px;padding:16px 18px;height:100px;">
     <div style="margin-bottom:8px;">{badge(urgency, bc)}</div>
     <div style="font-weight:600;font-size:0.875rem;color:{C["text"]};
                 margin-bottom:3px;">{w['concept']}</div>
-    <div style="font-size:0.75rem;color:{C["text_3"]};">
-        {w['fail_count']} mistake(s)
-    </div>
+    <div style="font-size:0.75rem;color:{C["text_3"]};">{mistakes_txt}</div>
 </div>""", unsafe_allow_html=True)
-                if st.button("Practice", key=f"rec_{i}",
+                prac_btn = "Pratiquer" if lang == "fr" else "Practice"
+                if st.button(prac_btn, key=f"rec_{i}",
                              use_container_width=True, type="secondary"):
                     st.session_state.current_page = "quiz"
                     st.rerun()
+
+    # ── Plan d'étude IA personnalisé ──────────────────────────
+    spacer(28)
+    plan_header = "Plan d'Étude Personnalisé" if lang == "fr" else "Personalized Study Plan"
+    plan_sub    = ("Généré par l'IA selon vos lacunes et votre niveau."
+                   if lang == "fr" else "AI-generated based on your weaknesses and level.")
+    st.markdown(f"""
+<p style="font-size:0.72rem;font-weight:600;letter-spacing:0.08em;
+          text-transform:uppercase;color:{C["text_3"]};margin-bottom:4px;">{plan_header}</p>
+<p style="font-size:0.8125rem;color:{C["text_3"]};margin-bottom:12px;">{plan_sub}</p>
+""", unsafe_allow_html=True)
+
+    plan_btn_label = "🤖 Générer mon plan d'étude" if lang == "fr" else "🤖 Generate my study plan"
+    if st.button(plan_btn_label, key="dash_gen_plan", type="secondary"):
+        with st.spinner("Analyse de votre profil…" if lang == "fr" else "Analysing your profile…"):
+            plan = generate_study_plan(weak, stats, language=lang)
+        st.session_state["_dash_study_plan"] = plan
+
+    if st.session_state.get("_dash_study_plan"):
+        plan = st.session_state["_dash_study_plan"]
+        st.markdown(f"""
+<div style="background:{C["surface"]};border:1px solid {C["border"]};border-radius:12px;
+            padding:20px 24px;margin-top:8px;">
+  <div style="font-weight:700;color:{C["text"]};margin-bottom:4px;">
+    🎯 {plan.get('objectif', '')}
+  </div>
+  <div style="font-size:0.85rem;color:{C["text_2"]};margin-bottom:14px;">
+    {plan.get('conseil_general', '')}
+  </div>""", unsafe_allow_html=True)
+        for sess in plan.get("sessions", [])[:5]:
+            prio = sess.get("priorite", "")
+            pcolor = C["red"] if prio == "haute" else C["orange"] if prio == "moyenne" else C["text_3"]
+            st.markdown(f"""
+  <div style="display:flex;align-items:center;gap:12px;padding:9px 0;
+              border-bottom:1px solid {C["border"]};">
+    <span style="color:{pcolor};font-size:0.72rem;font-weight:700;
+                 min-width:60px;text-transform:uppercase;">{prio}</span>
+    <span style="flex:1;font-size:0.875rem;color:{C["text"]};">{sess.get('titre','')}</span>
+    <span style="font-size:0.75rem;color:{C["text_3"]};white-space:nowrap;">
+      {sess.get('duree_min',30)} min · {sess.get('activite','')}
+    </span>
+  </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Email du rapport de progression ───────────────────────
+    if email_configured():
+        spacer(16)
+        email_lbl = "📧 Recevoir mon rapport par email" if lang == "fr" else "📧 Email my progress report"
+        if st.button(email_lbl, key="dash_email_report"):
+            with st.spinner("Génération du rapport…" if lang == "fr" else "Generating report…"):
+                report = generate_progress_report(
+                    student_name=st.session_state.get("student_name", "Étudiant"),
+                    stats=stats,
+                    weaknesses=weak,
+                    language=lang,
+                )
+                result = send_weekly_summary(
+                    student_email=st.session_state.get("student_email", ""),
+                    student_name=st.session_state.get("student_name", "Étudiant"),
+                    stats=stats,
+                    weaknesses=weak,
+                    progress_report=report,
+                )
+            if result.get("success"):
+                ok_msg = f"✅ Rapport envoyé à {st.session_state.get('student_email','')}"
+                st.success(ok_msg if lang == "fr" else ok_msg.replace("Rapport envoyé", "Report sent"))
+            else:
+                st.error(f"❌ {result.get('error', 'Erreur')}")

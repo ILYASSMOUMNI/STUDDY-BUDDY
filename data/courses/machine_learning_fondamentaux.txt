@@ -1,0 +1,194 @@
+COURS : MACHINE LEARNING — FONDAMENTAUX
+Filière : IA & Data Science — EMSI Maroc
+================================================
+
+CHAPITRE 1 : INTRODUCTION AU MACHINE LEARNING
+
+1.1 Définition
+Le Machine Learning (apprentissage automatique) est une branche de l'intelligence artificielle qui permet aux systèmes d'apprendre automatiquement à partir de données, sans être explicitement programmés pour chaque tâche.
+
+Tom Mitchell (1997) définit le ML : « Un programme apprend à partir de l'expérience E par rapport à une tâche T avec une mesure de performance P, si sa performance sur T mesurée par P s'améliore avec l'expérience E. »
+
+1.2 Types d'apprentissage
+
+A) Apprentissage supervisé (Supervised Learning)
+- L'algorithme apprend à partir d'un ensemble de données étiquetées (entrées + sorties connues)
+- Objectif : prédire la sortie pour de nouvelles entrées
+- Exemples : classification d'emails (spam/non-spam), prédiction des prix immobiliers
+- Algorithmes courants : Régression linéaire, Régression logistique, SVM, Arbres de décision, Random Forest, K-NN
+
+B) Apprentissage non supervisé (Unsupervised Learning)
+- L'algorithme apprend à partir de données NON étiquetées
+- Objectif : découvrir des structures cachées dans les données
+- Exemples : segmentation de clients, détection d'anomalies, réduction de dimensionnalité
+- Algorithmes courants : K-Means, DBSCAN, PCA, Autoencodeurs, GMM
+
+C) Apprentissage par renforcement (Reinforcement Learning)
+- Un agent apprend en interagissant avec un environnement
+- Il reçoit des récompenses (positives ou négatives) selon ses actions
+- Objectif : maximiser la récompense cumulée
+- Exemples : jeux (AlphaGo, Chess), robotique, véhicules autonomes
+- Concepts clés : état, action, politique, récompense, valeur Q
+
+D) Apprentissage semi-supervisé
+- Combinaison de données étiquetées (peu nombreuses) et non étiquetées (nombreuses)
+- Utilisé quand l'étiquetage est coûteux
+- Méthodes : Label Propagation, Self-Training
+
+CHAPITRE 2 : LE PIPELINE ML STANDARD
+
+2.1 Les étapes fondamentales
+
+Étape 1 — Collecte des données
+- Sources : bases de données, APIs, web scraping, capteurs IoT, fichiers CSV
+- Qualité > quantité (données biaisées = modèle biaisé)
+- Volume minimal : dépend de la complexité du problème
+
+Étape 2 — Exploration et analyse (EDA)
+- Statistiques descriptives : moyenne, médiane, écart-type, quartiles
+- Visualisations : histogrammes, boîtes à moustaches, matrices de corrélation
+- Détection des valeurs aberrantes (outliers) et des valeurs manquantes
+- Outils : Pandas, Matplotlib, Seaborn, Plotly
+
+Étape 3 — Prétraitement (Preprocessing)
+- Nettoyage : traitement des valeurs manquantes (suppression, imputation par moyenne/médiane/mode)
+- Encodage des variables catégorielles : One-Hot Encoding, Label Encoding
+- Normalisation/Standardisation :
+  * Standardisation Z-score : x' = (x - μ) / σ  →  moyenne=0, écart-type=1
+  * Normalisation Min-Max : x' = (x - min) / (max - min)  →  valeurs entre [0,1]
+- Gestion des déséquilibres de classes : SMOTE, sur/sous-échantillonnage
+
+Étape 4 — Sélection de features (Feature Engineering)
+- Sélection des variables pertinentes : filter methods (corrélation), wrapper methods (RFE), embedded methods (Lasso)
+- Création de nouvelles features : combinaisons, transformations logarithmiques
+- Réduction de dimensionnalité : PCA, t-SNE, UMAP
+
+Étape 5 — Division des données
+- Train / Validation / Test : typiquement 70% / 15% / 15% ou 80% / 20%
+- Cross-validation K-Fold : divise les données en K partitions, évalue K fois
+- Stratified split : préserve la proportion des classes
+
+Étape 6 — Entraînement du modèle
+- Choix de l'algorithme selon le problème (régression, classification, clustering)
+- Ajustement des hyperparamètres : Grid Search, Random Search, Bayesian Optimization
+- Régularisation : L1 (Lasso), L2 (Ridge), Elastic Net
+
+Étape 7 — Évaluation
+- Classification : Accuracy, Précision, Rappel, F1-Score, ROC-AUC, Matrice de confusion
+- Régression : MSE, RMSE, MAE, R²
+- Clustering : Silhouette Score, Inertie, Davies-Bouldin Index
+
+Étape 8 — Déploiement et monitoring
+- Sérialisation du modèle : Pickle, Joblib, ONNX
+- API REST : Flask, FastAPI
+- Monitoring : dérive des données (data drift), dérive du modèle (model drift)
+
+CHAPITRE 3 : ALGORITHMES CLÉS
+
+3.1 Régression Linéaire
+- Modèle : y = β₀ + β₁x₁ + β₂x₂ + ... + βₙxₙ + ε
+- Fonction de coût : MSE = (1/n) × Σ(yᵢ - ŷᵢ)²
+- Optimisation : Moindres Carrés Ordinaires (OLS) ou Descente de Gradient
+- Hypothèses : linéarité, homoscédasticité, absence de multicolinéarité
+
+3.2 Régression Logistique (Classification)
+- Utilise la fonction sigmoïde : σ(z) = 1 / (1 + e^(-z))
+- Sortie : probabilité P(y=1|x) entre 0 et 1
+- Seuil de décision : souvent 0.5
+- Fonction de coût : Log Loss (Binary Cross-Entropy)
+
+3.3 Arbres de Décision
+- Structure hiérarchique : nœuds (tests), branches (résultats), feuilles (décisions)
+- Critères de division : Gini Impurity, Entropie d'Information, Gain d'Information
+- Avantages : interprétable, pas de normalisation requise
+- Inconvénients : surajustement (overfitting), instabilité
+
+3.4 Random Forest
+- Ensemble de N arbres de décision entraînés sur des sous-ensembles aléatoires (bagging)
+- Prédiction finale : vote majoritaire (classification) ou moyenne (régression)
+- Avantages : robuste au surajustement, gère les données manquantes
+- Hyperparamètres : n_estimators, max_depth, min_samples_split
+
+3.5 Support Vector Machine (SVM)
+- Trouve l'hyperplan qui maximise la marge entre les classes
+- Noyaux (kernels) : linéaire, polynomial, RBF (Radial Basis Function)
+- Paramètre C : contrôle le compromis biais-variance
+- Paramètre γ : influence de chaque point d'entraînement
+
+3.6 K-Nearest Neighbors (KNN)
+- Classe un point selon les K voisins les plus proches
+- Mesures de distance : Euclidienne, Manhattan, Cosinus
+- Choix de K : petit K = bruit, grand K = biais
+
+3.7 K-Means (Clustering)
+- Algorithme itératif : initialise K centroïdes, assigne chaque point au centroïde le plus proche, recalcule les centroïdes
+- Fonction objectif : minimiser l'inertie (somme des distances au centroïde)
+- Limitation : K fixé à l'avance, sensible aux outliers
+- Variante : K-Means++ (initialisation améliorée)
+
+CHAPITRE 4 : BIAIS ET VARIANCE
+
+4.1 Le compromis Biais-Variance
+- Biais (Bias) : erreur due aux hypothèses simplificatrices du modèle → Sous-ajustement (Underfitting)
+- Variance : sensibilité du modèle aux fluctuations des données → Surajustement (Overfitting)
+- Erreur totale = Biais² + Variance + Bruit irréductible
+
+4.2 Diagnostics
+- Underfitting : erreur élevée sur train ET test → modèle trop simple → augmenter la complexité
+- Overfitting : erreur faible sur train, élevée sur test → modèle trop complexe → régularisation, plus de données
+
+4.3 Techniques de régularisation
+- L1 (Lasso) : pénalise la valeur absolue des coefficients → peut forcer des coefficients à zéro (sélection de features)
+- L2 (Ridge) : pénalise le carré des coefficients → réduit les coefficients sans les annuler
+- Dropout (réseaux de neurones) : désactive aléatoirement des neurones pendant l'entraînement
+- Early Stopping : arrête l'entraînement quand la validation commence à se dégrader
+
+CHAPITRE 5 : MÉTRIQUES D'ÉVALUATION
+
+5.1 Classification
+- Matrice de confusion : TP (Vrais Positifs), FP (Faux Positifs), TN (Vrais Négatifs), FN (Faux Négatifs)
+- Accuracy = (TP + TN) / (TP + TN + FP + FN)  — à éviter si classes déséquilibrées
+- Précision = TP / (TP + FP)  — "parmi les prédictions positives, combien sont correctes ?"
+- Rappel (Recall/Sensibilité) = TP / (TP + FN)  — "parmi les vrais positifs, combien sont détectés ?"
+- F1-Score = 2 × (Précision × Rappel) / (Précision + Rappel)  — harmonie entre précision et rappel
+- ROC-AUC : aire sous la courbe ROC (Receiver Operating Characteristic) — mesure la séparabilité
+
+5.2 Régression
+- MSE (Mean Squared Error) = (1/n) × Σ(yᵢ - ŷᵢ)²  — pénalise fortement les grandes erreurs
+- RMSE = √MSE  — même unité que la variable cible
+- MAE (Mean Absolute Error) = (1/n) × Σ|yᵢ - ŷᵢ|  — robuste aux outliers
+- R² (Coefficient de détermination) = 1 - SS_res/SS_tot  — proportion de variance expliquée
+
+CHAPITRE 6 : OUTILS ET BIBLIOTHÈQUES
+
+6.1 Python pour le ML
+- Scikit-learn : implémentations standardisées de la plupart des algorithmes ML
+- Pandas : manipulation et analyse de données tabulaires
+- NumPy : calcul numérique, algèbre linéaire
+- Matplotlib / Seaborn / Plotly : visualisations
+- XGBoost / LightGBM / CatBoost : algorithmes de Gradient Boosting (très performants sur données tabulaires)
+
+6.2 Exemple de code Scikit-learn
+  from sklearn.ensemble import RandomForestClassifier
+  from sklearn.model_selection import train_test_split, cross_val_score
+  from sklearn.preprocessing import StandardScaler
+  from sklearn.metrics import classification_report
+
+  X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+  scaler = StandardScaler()
+  X_train = scaler.fit_transform(X_train)
+  X_test = scaler.transform(X_test)
+
+  model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
+  model.fit(X_train, y_train)
+  print(classification_report(y_test, model.predict(X_test)))
+  scores = cross_val_score(model, X, y, cv=5, scoring='f1_macro')
+  print(f"CV F1-Score moyen : {scores.mean():.3f} ± {scores.std():.3f}")
+
+RÉSUMÉ DES CONCEPTS CLÉS
+- Machine Learning = apprentissage automatique à partir de données
+- 3 types principaux : supervisé, non supervisé, par renforcement
+- Pipeline ML : collecte → EDA → preprocessing → features → split → entraînement → évaluation → déploiement
+- Compromis biais-variance : underfitting vs overfitting
+- Métriques clés : F1-Score (classification), RMSE (régression), Silhouette (clustering)
+- Outils : Scikit-learn, Pandas, NumPy, XGBoost

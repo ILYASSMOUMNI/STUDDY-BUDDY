@@ -12,9 +12,24 @@ st.set_page_config(
     page_title="StudyBuddy",
     page_icon=None,
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
-init_db()
+
+
+@st.cache_resource(show_spinner=False)
+def _startup():
+    """Initialisation unique au démarrage : DB + cours exemples."""
+    init_db()
+    try:
+        from backend.sample_courses import init_sample_courses
+        titles = init_sample_courses()
+        if titles:
+            print(f"[App] Cours exemples indexés : {titles}")
+    except Exception as e:
+        print(f"[App] Avertissement init cours exemples : {e}")
+
+
+_startup()
 inject_global_css()
 
 _DEFAULTS = {

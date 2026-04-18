@@ -1,8 +1,9 @@
 # frontend/page_quiz.py
 
 import streamlit as st
-from backend.database import get_all_courses, save_quiz_result, get_weaknesses
-from backend.ai_tutor import generate_quiz, generate_targeted_quiz, analyze_weaknesses
+from backend.database import get_all_courses, save_quiz_result, get_weaknesses, get_course_by_id
+from backend.ai_tutor import generate_quiz, generate_targeted_quiz, analyze_weaknesses, generate_study_plan
+from backend.email_service import send_quiz_report, is_configured as email_configured
 from frontend.design_system import C, page_title, badge, spacer, divider, inline_alert
 from frontend.i18n import t
 
@@ -201,6 +202,33 @@ def _questions(lang: str = "fr"):
 
     divider()
     remaining = total - len(st.session_state.quiz_answers)
+
+    # ── Human-in-the-Loop : confirmation avant soumission ────────────────
+    if st.session_state.get("_quiz_confirm_pending"):
+        st.markdown(f"""
+<div style="background:{C["orange_bg"]};border:1px solid #FDE68A;border-radius:10px;
+            padding:16px 20px;margin-bottom:16px;">
+  <p style="font-weight:700;color:{C["orange"]};margin:0 0 6px;">
+    ⚠️ {'Confirmer la soumission' if lang=='fr' else 'Confirm submission'}
+  </p>
+  <p style="font-size:0.875rem;color:{C["text_2"]};margin:0;">
+    {'Vous avez répondu à ' if lang=='fr' else 'You answered '}
+    <strong>{len(st.session_state.quiz_answers)}/{total}</strong>
+    {' questions. Cette action enregistre vos réponses et met à jour votre profil d\'apprentissage.' if lang=='fr'
+     else ' questions. This will save your answers and update your learning profile.'}
+  </p>
+</div>""", unsafe_allow_html=True)
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            if st.button(f"✅ {'Confirmer' if lang=='fr' else 'Confirm'}", type="primary", use_container_width=True):
+                st.session_state._quiz_confirm_pending = False
+                _submit()
+        with cc2:
+            if st.button(f"↩ {'Continuer le quiz' if lang=='fr' else 'Continue quiz'}", use_container_width=True):
+                st.session_state._quiz_confirm_pending = False
+                st.rerun()
+        return
+
     c_msg, c_cancel, c_submit = st.columns([3, 1, 1])
     with c_msg:
         if remaining > 0:
@@ -210,13 +238,16 @@ def _questions(lang: str = "fr"):
 </span>""", unsafe_allow_html=True)
     with c_cancel:
         if st.button(f"❌ {t('common.cancel', lang)}", type="secondary", use_container_width=True):
-            st.session_state.quiz_data    = None
-            st.session_state.quiz_answers = {}
+            st.session_state.quiz_data              = None
+            st.session_state.quiz_answers           = {}
+            st.session_state._quiz_confirm_pending  = False
             st.rerun()
     with c_submit:
         lbl = f"✓ {t('quiz.submit', lang)}" if remaining == 0 else f"→ {t('quiz.submit_anyway', lang)}"
         if st.button(lbl, type="primary", use_container_width=True):
-            _submit()
+            # HITL : demander confirmation avant d'enregistrer
+            st.session_state._quiz_confirm_pending = True
+            st.rerun()
 
 
 # ─── SUBMIT ──────────────────────────────────────────────────
@@ -381,18 +412,89 @@ def _results(lang: str = "fr"):
             with st.expander(t("quiz.full_analysis", lang)):
                 st.markdown(analysis["analyse"])
 
+    # ── Plan d'étude personnalisé ─────────────────────────────────────────
+    if wrong:
+        spacer(8)
+        study_key = f"_study_plan_{quiz.get('course_id')}"
+        if st.button(
+            f"📋 {'Générer un plan d\'étude personnalisé' if lang=='fr' else 'Generate personalized study plan'}",
+            key="gen_plan_btn", use_container_width=True, type="secondary",
+        ):
+            with st.spinner("Analyse en cours…" if lang == "fr" else "Analysing…"):
+                from backend.database import get_student_stats
+                stats_data = get_student_stats(st.session_state.student_id)
+                weak_data  = get_weaknesses(st.session_state.student_id)
+                plan       = generate_study_plan(weak_data, stats_data, language=lang)
+            st.session_state[study_key] = plan
+
+        if st.session_state.get(study_key):
+            plan = st.session_state[study_key]
+            st.markdown(f"""
+<div style="background:{C["surface"]};border:1px solid {C["border"]};border-radius:12px;
+            padding:20px 24px;margin-top:12px;">
+  <p style="font-weight:700;color:{C["text"]};margin:0 0 6px;">
+    🎯 {plan.get('objectif','Plan d\'étude')}
+  </p>
+  <p style="font-size:0.85rem;color:{C["text_2"]};margin-bottom:14px;">
+    {plan.get('conseil_general','')}
+  </p>""", unsafe_allow_html=True)
+            for sess in plan.get("sessions", [])[:4]:
+                prio_color = C["red"] if sess.get("priorite") == "haute" else C["orange"] if sess.get("priorite") == "moyenne" else C["text_3"]
+                st.markdown(f"""
+  <div style="display:flex;align-items:center;gap:10px;padding:8px 0;
+              border-bottom:1px solid {C["border"]};">
+    <span style="color:{prio_color};font-size:0.75rem;font-weight:700;min-width:70px;">
+      {sess.get('priorite','').upper()}
+    </span>
+    <span style="flex:1;font-size:0.875rem;color:{C["text"]};">{sess.get('titre','')}</span>
+    <span style="font-size:0.75rem;color:{C["text_3"]};white-space:nowrap;">
+      {sess.get('duree_min',30)} min · {sess.get('activite','')}
+    </span>
+  </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Email du rapport (Human-in-the-Loop Cloud) ────────────────────────
+    if email_configured():
+        email = st.session_state.get("student_email", "")
+        name  = st.session_state.get("student_name", "")
+        course_id = quiz.get("course_id")
+        course    = get_course_by_id(course_id) if course_id else None
+        course_title = course["title"] if course else "Quiz"
+        weak_concepts = [w["concept"] for w in wrong] if wrong else []
+        spacer(8)
+        if st.button(
+            f"📧 {'Recevoir mon rapport par email' if lang=='fr' else 'Get report by email'}",
+            key="send_email_btn", use_container_width=True,
+        ):
+            with st.spinner("Envoi en cours…" if lang == "fr" else "Sending…"):
+                result = send_quiz_report(
+                    student_email=email,
+                    student_name=name,
+                    course_title=course_title,
+                    score=pct,
+                    total=total,
+                    correct=correct,
+                    weak_concepts=weak_concepts,
+                )
+            if result.get("success"):
+                st.success(f"✅ Rapport envoyé à {email}" if lang == "fr" else f"✅ Report sent to {email}")
+            else:
+                st.error(f"❌ {result.get('error','Erreur d\'envoi')}")
+
     divider()
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button(t("quiz.new", lang), type="primary", use_container_width=True):
-            st.session_state.quiz_data      = None
-            st.session_state.quiz_answers   = {}
-            st.session_state.quiz_submitted = False
+            st.session_state.quiz_data             = None
+            st.session_state.quiz_answers          = {}
+            st.session_state.quiz_submitted        = False
+            st.session_state._quiz_confirm_pending = False
             st.rerun()
     with c2:
         if wrong and st.button(t("quiz.retry_targeted", lang), type="secondary", use_container_width=True):
-            st.session_state.quiz_data      = None
-            st.session_state.quiz_submitted = False
+            st.session_state.quiz_data             = None
+            st.session_state.quiz_submitted        = False
+            st.session_state._quiz_confirm_pending = False
             st.rerun()
     with c3:
         if st.button(t("quiz.ask_tutor", lang), type="secondary", use_container_width=True):

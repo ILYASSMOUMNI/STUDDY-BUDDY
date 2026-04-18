@@ -1,207 +1,220 @@
-# 📚 StudyBuddy — IA Tuteur pour IA & Data Science
+# StudyBuddy — Tuteur IA Personnalisé
 
-> Projet IA Distribuée — EMSI Morocco  
-> Tuteur IA basé sur RAG (Retrieval-Augmented Generation) + Claude (Anthropic)
+Système Multi-Agents (SMA) de tutorat intelligent basé sur RAG, construit avec Streamlit, ChromaDB et OpenRouter.  
+Uploadez vos cours, chattez avec le tuteur IA, passez des quiz adaptatifs, et suivez vos lacunes.
+
+> Projet IA Distribuée — EMSI Maroc
 
 ---
 
-## 🏗️ Architecture
+## Architecture Globale du Système (4 Couches)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  COUCHE 1 — Orchestration                                       │
+│  AgentOrchestrator : routing, retry exponentiel, fallback model │
+├─────────────────────────────────────────────────────────────────┤
+│  COUCHE 2 — Cognitive (3 Agents distincts)                      │
+│  TutorAgent · AssessmentAgent · AnalysisAgent                   │
+├─────────────────────────────────────────────────────────────────┤
+│  COUCHE 3 — Connaissance                                        │
+│  ChromaDB (Vector DB) + SentenceTransformers embeddings         │
+├─────────────────────────────────────────────────────────────────┤
+│  COUCHE 4 — Action & Résilience                                 │
+│  MCP Server · Gmail SMTP · Self-Correction Loop · HITL          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Structure du Projet
 
 ```
 studybuddy/
-├── app.py                    ← Point d'entrée Streamlit + routeur
-├── .env                      ← Configuration (API Key, chemins)
-├── requirements.txt          ← Dépendances Python
-├── .streamlit/
-│   └── config.toml           ← Config Streamlit (port, thème)
+├── app.py                        ← Entrypoint Streamlit + router de pages
+├── .env                          ← Clés API + chemins + config email
+├── requirements.txt
 │
 ├── backend/
-│   ├── database.py           ← SQLite : étudiants, cours, quiz, lacunes
-│   ├── course_parser.py      ← Extraction texte PDF/DOCX + chunking
-│   ├── vector_store.py       ← ChromaDB + embeddings sentence-transformers
-│   └── ai_tutor.py           ← Moteur IA : Claude API + RAG + quiz
+│   ├── agents/                   ← Système Multi-Agents (Couche 2)
+│   │   ├── tutor_agent.py        ← Agent 1 : Tuteur pédagogique (RAG + mémoire)
+│   │   ├── assessment_agent.py   ← Agent 2 : Évaluateur (quiz + auto-correction JSON)
+│   │   ├── analysis_agent.py     ← Agent 3 : Analyste (lacunes + plan d'étude)
+│   │   └── orchestrator.py       ← Orchestrateur : routing, retry, fallback
+│   │
+│   ├── mcp_server.py             ← Serveur MCP : abstraction SQL/vectorstore/fichiers
+│   ├── email_service.py          ← Service Gmail SMTP (rapports HTML)
+│   ├── sample_courses.py         ← Auto-indexation des cours exemples au démarrage
+│   │
+│   ├── database.py               ← SQLite : étudiants, cours, quiz, lacunes
+│   ├── course_parser.py          ← Extraction PDF/DOCX/TXT + chunking (800 mots, overlap 150)
+│   ├── vector_store.py           ← ChromaDB + embeddings multilingues (thread-safe)
+│   └── ai_tutor.py               ← Façade publique → délègue à l'orchestrateur
 │
 ├── frontend/
-│   ├── page_login.py         ← Connexion / inscription
-│   ├── page_home.py          ← Accueil avec stats
-│   ├── page_courses.py       ← Upload et gestion des cours
-│   ├── page_chat.py          ← Chat avec le tuteur IA
-│   ├── page_quiz.py          ← Quiz adaptatif + détection lacunes
-│   └── page_dashboard.py     ← Analytics et progression
+│   ├── design_system.py          ← Thème CSS + composants réutilisables
+│   ├── i18n.py                   ← Internationalisation FR / EN
+│   ├── page_login.py             ← Connexion / création de compte
+│   ├── page_home.py              ← Tableau de bord : KPIs + progression
+│   ├── page_courses.py           ← Upload, indexation, gestion des cours
+│   ├── page_chat.py              ← Chat pédagogique avec rendu Markdown
+│   ├── page_quiz.py              ← Quiz adaptatif QCM + HITL + email rapport
+│   └── page_dashboard.py         ← Analytics : courbes, lacunes, plan d'étude IA
 │
-├── data/
-│   ├── courses/              ← Fichiers PDF/DOCX uploadés
-│   ├── vectorstore/          ← Base ChromaDB (auto-créée)
-│   └── studybuddy.db         ← Base SQLite (auto-créée)
-│
-└── scripts/
-    ├── deploy_azure.sh       ← Script déploiement Azure Linux VM
-    └── start_windows.bat     ← Auto-start Azure Windows VM
+└── data/
+    ├── courses/                  ← Fichiers uploadés + cours exemples (.txt)
+    │   ├── machine_learning_fondamentaux.txt
+    │   ├── deep_learning_reseaux_neurones.txt
+    │   ├── nlp_et_grands_modeles_de_langage.txt
+    │   └── big_data_hadoop_spark.txt
+    ├── vectorstore/              ← Index ChromaDB persistant (auto-créé)
+    └── studybuddy.db             ← Base SQLite (auto-créée)
 ```
 
 ---
 
-## 🚀 Installation rapide
-
-### Étape 1 — Cloner et configurer
+## Démarrage rapide
 
 ```bash
-# Cloner le projet
-git clone <ton-repo> studybuddy
-cd studybuddy
-
-# Créer l'environnement virtuel
-python3 -m venv venv
-source venv/bin/activate          # Linux/Mac
-# venv\Scripts\activate.bat       # Windows
-
-# Installer les dépendances
+# 1. Environnement virtuel
+python -m venv venv
+source venv/bin/activate          # Windows : venv\Scripts\activate
 pip install -r requirements.txt
-```
 
-### Étape 2 — Configurer la clé API
-
-Édite le fichier `.env` :
-
-```env
-ANTHROPIC_API_KEY=sk-ant-TON_VRAI_CLE_ICI
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+# 2. Configurer .env
+OPENROUTER_API_KEY=sk-or-...      # https://openrouter.ai/keys
+OPENROUTER_MODEL=mistralai/mistral-7b-instruct
+FALLBACK_MODEL=google/gemma-2-9b-it:free
 FILIERE=IA & Data Science
-```
 
-> 💡 Récupère ta clé sur : https://console.anthropic.com/
-
-### Étape 3 — Lancer
-
-```bash
+# 3. Lancer
 streamlit run app.py
 ```
 
-Ouvre ton navigateur sur : **http://localhost:8501**
+Ouvrir **http://localhost:8501**
+
+> Au premier lancement, les 4 cours exemples (ML, Deep Learning, NLP, Big Data) sont automatiquement indexés dans ChromaDB. Le RAG fonctionne immédiatement sans upload manuel.
 
 ---
 
-## ☁️ Déploiement Azure VM
+## Fonctionnement Détaillé
 
-### Option A — VM Linux (Ubuntu)
+### Couche 1 — Orchestration (AgentOrchestrator)
 
-```bash
-# 1. Se connecter à la VM
-ssh ton-user@IP-VM-AZURE
-
-# 2. Uploader le projet
-scp -r studybuddy/ ton-user@IP-VM-AZURE:~/
-
-# 3. Lancer le script de déploiement
-cd ~/studybuddy
-bash scripts/deploy_azure.sh
-
-# 4. Lancer en production (arrière-plan)
-source venv/bin/activate
-mkdir -p logs
-nohup streamlit run app.py --server.port 8501 --server.address 0.0.0.0 > logs/app.log 2>&1 &
-echo $! > studybuddy.pid
-```
-
-### Option B — VM Windows (ta config actuelle)
-
-```bat
-REM 1. Copier le projet dans C:\StudyBuddy
-REM 2. Ouvrir PowerShell en administrateur :
-
-cd C:\StudyBuddy
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-
-REM 3. Configurer .env avec ta clé API
-
-REM 4. Lancer :
-streamlit run app.py --server.port 8501 --server.address 0.0.0.0
-
-REM 5. Pour l'auto-start : copier start_windows.bat dans le dossier Startup Windows
-```
-
-### Ouvrir le port 8501 sur Azure
+L'orchestrateur centralise tous les appels IA et gère la résilience :
 
 ```
-Azure Portal → Ta VM → Networking → Inbound port rules
-→ Add inbound port rule :
-   - Destination port: 8501
-   - Protocol: TCP
-   - Action: Allow
-   - Priority: 1001
-   - Name: StudyBuddy
+Requête utilisateur
+  → Sélection de l'agent (Tutor / Assessment / Analysis)
+  → Construction du contexte RAG (ChromaDB via MCP)
+  → Appel LLM avec retry exponentiel (×3, délai 2s/4s/8s)
+  → En cas d'échec : fallback vers FALLBACK_MODEL
+  → Retour de la réponse ou message d'erreur gracieux
 ```
 
-Accès : **http://[IP-PUBLIQUE-AZURE]:8501**
+### Couche 2 — Agents Cognitifs
+
+**Agent 1 — TutorAgent** (`tutor_agent.py`)
+- System prompt pédagogique spécialisé (EMSI, filière IA & Data Science)
+- Réponses en 4 modes : défaut, pas-à-pas, exemple concret, résumé
+- Gestion automatique de la fenêtre de contexte :
+  - Si > 10 messages → résumé automatique des anciens échanges via LLM
+  - Conserve les 4 derniers messages intacts
+
+**Agent 2 — AssessmentAgent** (`assessment_agent.py`)
+- Génère des QCM basés strictement sur le contenu du cours (RAG)
+- **Self-Correction Loop** : si le JSON généré est invalide, demande au LLM de se corriger (max 3 tentatives avec feedback d'erreur précis)
+- Utilise le modèle de fallback à la 3ème tentative
+- Évalue aussi les réponses ouvertes avec feedback constructif
+
+**Agent 3 — AnalysisAgent** (`analysis_agent.py`)
+- Identifie les lacunes conceptuelles à partir des erreurs de quiz
+- Génère un plan d'étude personnalisé (sessions avec durée, activité, priorité)
+- Produit un rapport de progression textuel (FR/EN)
+
+### Couche 3 — Base de Connaissances (RAG)
+
+```
+PDF / DOCX / TXT uploadé
+  → course_parser.py    extraction texte + nettoyage
+  → split_into_chunks() découpage 800 mots, overlap 150 mots
+  → SentenceTransformers embeddings multilingues (paraphrase-multilingual-MiniLM-L12-v2)
+  → ChromaDB            indexation avec métrique cosinus (HNSW)
+
+Requête étudiant
+  → embedding de la query
+  → recherche sémantique top-5 (distance cosinus < 0.85)
+  → contexte RAG injecté dans le prompt LLM
+  → réponse ancrée sur le cours
+```
+
+### Couche 4 — Action & Résilience
+
+**MCP Server** (`mcp_server.py`)
+- Implémentation du Model Context Protocol (abstraction unifiée)
+- 6 outils enregistrés : `get_student_profile`, `search_knowledge`, `save_quiz_result`, `list_courses`, `get_course_progress`, `read_local_file`
+- Chaque appel est logué (timestamp, outil, succès/échec)
+- Interprétation du retour d'action → chemin de repli si erreur
+
+**Gmail SMTP** (`email_service.py`)
+- Rapport de quiz HTML (score, verdict, concepts à revoir)
+- Résumé hebdomadaire de progression
+- Déclenché depuis la page quiz ou le dashboard
+
+**Human-in-the-Loop (HITL)**
+- Confirmation obligatoire avant soumission du quiz
+- L'étudiant voit le nombre de réponses données et valide manuellement
+- Évite les soumissions accidentelles qui impactent le profil d'apprentissage
+
+**Boucle d'observation & Fallback**
+- Retry exponentiel sur chaque appel LLM (2s → 4s → 8s)
+- Basculement automatique vers `FALLBACK_MODEL` si le modèle principal échoue
+- Messages d'erreur gracieux affichés à l'utilisateur en cas d'indisponibilité
 
 ---
 
-## 🔧 Comment ça marche
+## Configuration Gmail (optionnel)
 
-### Pipeline RAG
+Pour activer les rapports email, ajoutez dans `.env` :
 
-```
-PDF/DOCX uploadé
-    ↓
-course_parser.py → extraction texte → nettoyage → chunks (800 mots, overlap 150)
-    ↓
-vector_store.py → embeddings (sentence-transformers multilingue) → ChromaDB
-    ↓
-Question étudiant → recherche sémantique → top 5 chunks pertinents
-    ↓
-Claude API → réponse contextualisée au cours
+```env
+GMAIL_USER=votre@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 ```
 
-### Détection des lacunes
-
-```
-Quiz QCM généré par Claude (basé sur les chunks du cours)
-    ↓
-Réponses de l'étudiant → comparaison → mauvaises réponses enregistrées
-    ↓
-analyze_weaknesses() → Claude identifie les concepts mal compris
-    ↓
-weaknesses table (SQLite) → fail_count incrémenté par concept
-    ↓
-generate_targeted_quiz() → quiz ciblé sur les concepts faibles
-```
+Créez un mot de passe d'application sur :  
+**myaccount.google.com → Sécurité → Mots de passe des applications**
 
 ---
 
-## 📦 Dépendances principales
+## Modèles LLM supportés
+
+| Modèle | Type | Usage recommandé |
+|--------|------|-----------------|
+| `mistralai/mistral-7b-instruct` | Gratuit | Modèle principal (défaut) |
+| `google/gemma-2-9b-it:free` | Gratuit | Fallback |
+| `openai/gpt-4o-mini` | Payant | Meilleure qualité |
+| `anthropic/claude-3-haiku` | Payant | Réponses rapides et précises |
+
+---
+
+## Dépendances principales
 
 | Bibliothèque | Rôle |
 |---|---|
-| `anthropic` | API Claude pour le tuteur IA |
+| `openai` | Client OpenRouter (compatible OpenAI) |
 | `streamlit` | Interface web |
-| `chromadb` | Base vectorielle locale |
+| `chromadb` | Base vectorielle locale persistante |
 | `sentence-transformers` | Embeddings multilingues |
 | `pdfplumber` | Extraction texte PDF |
 | `python-docx` | Extraction texte DOCX |
-| `plotly` | Graphiques dashboard |
-| `sqlite3` | Base de données (intégré Python) |
+| `plotly` | Graphiques de progression |
 
 ---
 
-## 🐛 Dépannage
+## Notes
 
-### Erreur : `ANTHROPIC_API_KEY not found`
-→ Vérifie que le fichier `.env` existe et contient ta vraie clé API
-
-### Erreur : `chromadb` crash
-→ `pip install chromadb --upgrade`
-
-### Le modèle d'embeddings est lent au 1er démarrage
-→ Normal ! Il télécharge ~120MB. Ensuite il est en cache.
-
-### Port 8501 inaccessible depuis l'extérieur
-→ Vérifie les règles NSG Azure ET le firewall de la VM
-
----
-
-## 👨‍💻 Développé pour
-
-**Projet IA Distribuée — EMSI Morocco**  
-Filière : IA & Data Science  
+- Le modèle d'embeddings (~120 MB) se télécharge au premier lancement puis est mis en cache.
+- Le singleton d'embeddings est thread-safe (double-checked locking) pour éviter le rechargement entre les reruns Streamlit.
+- La base SQLite utilise le mode WAL pour les accès concurrents.
+- Les cours exemples sont auto-indexés uniquement si la base est vide.

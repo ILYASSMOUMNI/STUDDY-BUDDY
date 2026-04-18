@@ -2,7 +2,7 @@
 # Gestion de la base vectorielle ChromaDB + embeddings sentence-transformers
 
 import os
-import json
+import threading
 from typing import List, Dict, Optional
 from pathlib import Path
 import chromadb
@@ -12,31 +12,37 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/vectorstore")
+VECTORSTORE_DIR  = os.getenv("VECTORSTORE_DIR", "./data/vectorstore")
 EMBED_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-# Singleton pattern pour ne charger le modèle qu'une fois
-_embed_model = None
-_chroma_client = None
+# Singletons thread-safe (double-checked locking) — évite le rechargement à chaque rerun Streamlit
+_embed_model:   Optional[SentenceTransformer]        = None
+_chroma_client: Optional[chromadb.PersistentClient]  = None
+_model_lock  = threading.Lock()
+_chroma_lock = threading.Lock()
 
 
 def get_embed_model() -> SentenceTransformer:
     global _embed_model
     if _embed_model is None:
-        print("[VECTOR] Chargement du modèle d'embeddings...")
-        _embed_model = SentenceTransformer(EMBED_MODEL_NAME)
-        print("[VECTOR] Modèle chargé ✅")
+        with _model_lock:
+            if _embed_model is None:          # double-checked locking
+                print("[VECTOR] Chargement du modèle d'embeddings…")
+                _embed_model = SentenceTransformer(EMBED_MODEL_NAME)
+                print("[VECTOR] Modèle chargé ✅")
     return _embed_model
 
 
 def get_chroma_client() -> chromadb.PersistentClient:
     global _chroma_client
     if _chroma_client is None:
-        Path(VECTORSTORE_DIR).mkdir(parents=True, exist_ok=True)
-        _chroma_client = chromadb.PersistentClient(
-            path=VECTORSTORE_DIR,
-            settings=Settings(anonymized_telemetry=False)
-        )
+        with _chroma_lock:
+            if _chroma_client is None:
+                Path(VECTORSTORE_DIR).mkdir(parents=True, exist_ok=True)
+                _chroma_client = chromadb.PersistentClient(
+                    path=VECTORSTORE_DIR,
+                    settings=Settings(anonymized_telemetry=False),
+                )
     return _chroma_client
 
 

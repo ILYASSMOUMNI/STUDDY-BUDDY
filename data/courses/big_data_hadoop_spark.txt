@@ -1,0 +1,321 @@
+COURS : BIG DATA — HADOOP, SPARK & ÉCOSYSTÈME
+Filière : IA & Data Science — EMSI Maroc
+================================================
+
+CHAPITRE 1 : INTRODUCTION AU BIG DATA
+
+1.1 Définition et caractéristiques (les 5V)
+Le Big Data désigne des ensembles de données si volumineux, variés et rapides qu'ils ne peuvent être traités par les systèmes classiques de gestion de bases de données.
+
+Les 5V du Big Data :
+1. Volume : quantité de données (To, Po, Eo). Ex: Facebook génère 4 Po/jour
+2. Vélocité : vitesse de génération et traitement. Ex: trading HFT, flux IoT temps réel
+3. Variété : diversité des formats. Ex: structuré (SQL), semi-structuré (JSON, XML), non structuré (images, audio)
+4. Véracité : qualité et fiabilité des données (bruit, incohérences, données manquantes)
+5. Valeur : bénéfice extrait après analyse. Ex: recommandations, détection de fraudes, prédictions
+
+1.2 Enjeux du Big Data
+- Stockage distribué : un seul serveur ne suffit plus → clusters de machines
+- Traitement parallèle : diviser pour mieux régner (partitionnement des données)
+- Tolérance aux pannes : une machine peut tomber → réplication des données
+- Scalabilité horizontale (scale-out) : ajouter des nœuds vs. scalabilité verticale (scale-up)
+
+1.3 Architectures de traitement
+- Batch processing : traitement par lots, différé (ex: Hadoop MapReduce)
+- Stream processing : traitement en temps réel, flux continu (ex: Apache Kafka + Spark Streaming)
+- Lambda architecture : batch + stream en parallèle (couche batch + couche vitesse + couche serving)
+- Kappa architecture : tout en stream, plus simple
+
+CHAPITRE 2 : HADOOP
+
+2.1 Présentation de Hadoop
+Apache Hadoop est un framework open-source de traitement distribué de données massives, basé sur le modèle MapReduce de Google (2004).
+
+Composants principaux de l'écosystème Hadoop :
+- HDFS : stockage distribué
+- YARN : gestionnaire de ressources
+- MapReduce : moteur de traitement batch
+- Common : librairies communes
+
+2.2 HDFS (Hadoop Distributed File System)
+HDFS divise les fichiers en blocs et les distribue sur un cluster.
+
+Architecture :
+- NameNode (1 maître) : gère les métadonnées (arborescence, localisation des blocs)
+  * Maintient le namespace du système de fichiers
+  * Stocke les métadonnées en mémoire (RAM)
+  * Secondary NameNode : sauvegarde des métadonnées (pas un failover)
+
+- DataNodes (N esclaves) : stockent physiquement les blocs de données
+  * Envoient des heartbeats au NameNode toutes les 3 secondes
+  * Gèrent la lecture/écriture des blocs
+
+Paramètres clés :
+- Taille de bloc : 128 MB par défaut (configurable : 64 MB, 256 MB)
+- Facteur de réplication : 3 par défaut (3 copies du même bloc sur des nœuds différents)
+  → Tolérance aux pannes : la perte d'un nœud ne cause aucune perte de données
+- Rack awareness : placement intelligent des répliques sur des racks différents
+
+Opérations HDFS :
+  hdfs dfs -mkdir /user/monrepertoire
+  hdfs dfs -put fichier.csv /user/monrepertoire/
+  hdfs dfs -ls /user/monrepertoire/
+  hdfs dfs -get /user/monrepertoire/fichier.csv ./local/
+  hdfs dfs -cat /user/monrepertoire/fichier.csv
+  hdfs dfs -du -h /user/  (espace occupé)
+  hdfs fsck /user/ -files -blocks  (vérification intégrité)
+
+2.3 MapReduce
+Paradigme de programmation pour le traitement distribué de données.
+
+Principe : diviser le problème en deux phases :
+- Map : traite chaque enregistrement indépendamment → émet des paires (clé, valeur)
+- Reduce : agrège les valeurs par clé
+
+Flux d'exécution :
+  Input → Split → Map → Shuffle & Sort → Reduce → Output
+
+Phases détaillées :
+1. Input Split : découpe les données en splits (souvent = un bloc HDFS)
+2. Map : chaque mapper traite un split en parallèle → émet (key, value)
+3. Combiner (optionnel) : réduction locale avant le réseau (mini-reduce sur le mapper)
+4. Shuffle & Sort : redistribution des paires par clé, tri
+5. Reduce : chaque reducer reçoit toutes les valeurs d'une clé → produit le résultat
+
+Exemple WordCount :
+  # Mapper : émet (mot, 1) pour chaque mot
+  def mapper(ligne):
+    for mot in ligne.split():
+      yield (mot, 1)
+
+  # Reducer : somme les comptes par mot
+  def reducer(mot, comptes):
+    yield (mot, sum(comptes))
+
+Limitations de MapReduce :
+- Écritures intermédiaires sur disque → très lent (I/O intensif)
+- Pas adapté pour les itérations (ML) ou le temps réel
+- Verbeux : beaucoup de code pour des tâches simples
+
+2.4 YARN (Yet Another Resource Negotiator)
+Gestionnaire de ressources du cluster Hadoop.
+
+Composants :
+- ResourceManager (1 par cluster) : gère l'allocation des ressources globales
+  * Scheduler : politique d'allocation (FIFO, Capacity, Fair)
+  * ApplicationManager : gère le cycle de vie des applications
+- NodeManager (1 par nœud) : gère les ressources locales (CPU, RAM), lance les containers
+- ApplicationMaster (1 par application) : négocie les ressources, supervise l'exécution
+
+Unité de ressource : Container (CPU + mémoire alloués à une tâche)
+
+2.5 Écosystème Hadoop
+- Hive : SQL sur Hadoop → traduit HiveQL en MapReduce/Tez/Spark
+- Pig : langage de script de haut niveau (Pig Latin) → analyse de flux de données
+- HBase : base NoSQL orientée colonnes, temps réel, sur HDFS (comme Bigtable)
+- Sqoop : import/export entre HDFS et bases relationnelles (MySQL, Oracle…)
+- Flume : collecte et agrégation de logs distribués
+- Oozie : orchestrateur de workflows Hadoop (planification, dépendances)
+- ZooKeeper : coordination distribuée (élection de leader, synchronisation)
+- Ambari : interface web de gestion du cluster Hadoop
+
+CHAPITRE 3 : APACHE SPARK
+
+3.1 Présentation
+Apache Spark (UC Berkeley, 2009) est un moteur de traitement distribué in-memory, 10 à 100 fois plus rapide que MapReduce.
+
+Avantages clés :
+- Calcul en mémoire : les données intermédiaires restent en RAM (pas d'I/O disque)
+- APIs riches : Scala, Java, Python (PySpark), R
+- Unified Engine : batch, streaming, ML, GraphX dans un seul framework
+- Lazy Evaluation : n'exécute que ce qui est nécessaire
+
+3.2 Architecture Spark
+
+Driver Program :
+- Contient le code utilisateur (SparkContext, SparkSession)
+- Crée le plan d'exécution (DAG)
+- Distribue les tâches aux Workers
+
+Cluster Manager : YARN, Mesos, Kubernetes, Spark Standalone
+
+Executors (Workers) :
+- Exécutent les tâches (tasks)
+- Stockent les données RDD en mémoire ou sur disque
+- Retournent les résultats au Driver
+
+3.3 RDD (Resilient Distributed Dataset)
+Abstraction de données fondamentale de Spark.
+
+Caractéristiques :
+- Immutable : une fois créé, ne peut pas être modifié (on crée de nouveaux RDDs)
+- Partitionné : distribué sur plusieurs nœuds (partitions)
+- Fault-tolerant : reconstruit automatiquement en cas de panne (via le lineage)
+- Lazy : les transformations ne sont pas exécutées immédiatement
+
+Opérations RDD :
+- Transformations (lazy) : map, filter, flatMap, groupByKey, reduceByKey, join, distinct, union
+- Actions (déclenchent l'exécution) : collect, count, first, take, saveAsTextFile, reduce, foreach
+
+Exemple RDD :
+  from pyspark import SparkContext
+  sc = SparkContext(appName="WordCount")
+  rdd = sc.textFile("hdfs:///data/texte.txt")
+  mots = rdd.flatMap(lambda ligne: ligne.split())
+  comptes = mots.map(lambda mot: (mot, 1)).reduceByKey(lambda a, b: a + b)
+  comptes.sortBy(lambda x: x[1], ascending=False).take(10)
+
+3.4 DataFrame API (Spark SQL)
+Interface structurée et optimisée (similaire aux DataFrames Pandas).
+
+- SparkSession : point d'entrée unique depuis Spark 2.0
+- Catalyst Optimizer : optimise automatiquement les requêtes (pushdown, projection pruning)
+- Tungsten Engine : exécution code généré, gestion mémoire binaire
+
+Exemple DataFrame :
+  from pyspark.sql import SparkSession
+  from pyspark.sql.functions import col, avg, count, when, lit
+
+  spark = SparkSession.builder.appName("AnalyseVentes").getOrCreate()
+  df = spark.read.csv("hdfs:///data/ventes.csv", header=True, inferSchema=True)
+
+  # Transformations
+  df_clean = df.dropna(subset=["montant"]) \
+               .filter(col("montant") > 0) \
+               .withColumn("categorie_prix",
+                  when(col("montant") > 1000, "premium").otherwise("standard"))
+
+  # Agrégations
+  stats = df_clean.groupBy("produit").agg(
+      count("*").alias("nb_ventes"),
+      avg("montant").alias("montant_moyen")
+  ).orderBy("montant_moyen", ascending=False)
+
+  stats.show(20)
+  stats.write.parquet("hdfs:///output/stats_ventes")
+
+3.5 Spark Streaming & Structured Streaming
+Traitement de données en temps quasi-réel.
+
+Discretized Streams (DStream) : découpe le flux en mini-batches RDD (ancienne API)
+
+Structured Streaming : API DataFrame sur des flux en temps réel (depuis Spark 2.x)
+- Modèle : flux = table infinie, chaque batch = nouvelles lignes
+- Sources : Kafka, fichiers, socket, Delta Lake
+- Sinks : Console, fichier, Kafka, mémoire
+
+Exemple Structured Streaming :
+  df_stream = spark.readStream \
+      .format("kafka") \
+      .option("kafka.bootstrap.servers", "localhost:9092") \
+      .option("subscribe", "topic-ventes") \
+      .load()
+
+  query = df_stream.writeStream \
+      .outputMode("append") \
+      .format("console") \
+      .start()
+
+3.6 MLlib (Machine Learning sur Spark)
+Bibliothèque ML distribuée de Spark.
+
+Algorithmes disponibles : Régression linéaire/logistique, Decision Trees, Random Forest,
+GBT (Gradient Boosted Trees), K-Means, PCA, ALS (recommandation), Naive Bayes.
+
+Pipeline ML avec Spark :
+  from pyspark.ml import Pipeline
+  from pyspark.ml.feature import VectorAssembler, StandardScaler, StringIndexer
+  from pyspark.ml.classification import RandomForestClassifier
+  from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+
+  # Features
+  indexer = StringIndexer(inputCol="categorie", outputCol="cat_idx")
+  assembler = VectorAssembler(inputCols=["age", "revenu", "cat_idx"], outputCol="features_raw")
+  scaler = StandardScaler(inputCol="features_raw", outputCol="features")
+  rf = RandomForestClassifier(featuresCol="features", labelCol="label", numTrees=100)
+
+  # Pipeline
+  pipeline = Pipeline(stages=[indexer, assembler, scaler, rf])
+  train, test = df.randomSplit([0.8, 0.2], seed=42)
+  model = pipeline.fit(train)
+  predictions = model.transform(test)
+
+  evaluator = MulticlassClassificationEvaluator(metricName="f1")
+  print(f"F1 Score: {evaluator.evaluate(predictions):.4f}")
+
+CHAPITRE 4 : STOCKAGE ET FORMATS
+
+4.1 Formats de fichiers Big Data
+- CSV/TSV : lisible, non compressé, lent → à éviter pour le Big Data
+- JSON / JSON Lines : semi-structuré, flexible, mais redondant
+- Parquet : format columnar, compressé, très efficace pour les requêtes analytiques
+  * Compression : Snappy, GZIP, LZ4, ZSTD
+  * Predicate pushdown : filtre les données avant lecture
+  * Schema evolution : ajout de colonnes compatible
+- ORC (Optimized Row Columnar) : similaire à Parquet, très utilisé avec Hive
+- Avro : format row-based, schéma intégré, idéal pour Kafka et l'échange de données
+
+4.2 Bases de données NoSQL
+- Orientées documents : MongoDB, CouchDB → JSON, flexible, requêtes riches
+- Orientées colonnes : HBase, Cassandra → haute scalabilité, gros volumes
+- Clé-valeur : Redis, DynamoDB → très rapide, cas d'usage simple
+- Orientées graphes : Neo4j, JanusGraph → relations complexes
+- Modèle CAP : Consistency, Availability, Partition tolerance (max 2 sur 3)
+  * CP : HBase, MongoDB → cohérence prioritaire
+  * AP : Cassandra, DynamoDB → disponibilité prioritaire
+
+4.3 Apache Kafka
+Plateforme de streaming distribué pour la communication entre systèmes.
+
+Concepts :
+- Topic : canal de messages (ex: "commandes", "logs")
+- Partition : subdivision d'un topic, distribuée et ordonnée
+- Offset : position d'un message dans une partition
+- Producer : publie des messages dans un topic
+- Consumer : lit les messages d'un topic
+- Consumer Group : ensemble de consumers partageant la charge d'un topic
+- Broker : serveur Kafka (cluster = plusieurs brokers)
+- Réplication : facteur de réplication par topic (tolérance aux pannes)
+- Retention : durée de conservation des messages (ex: 7 jours, 1 To)
+
+Garanties : at-most-once, at-least-once, exactly-once (idempotent producer + transact.)
+
+CHAPITRE 5 : ARCHITECTURES DATA MODERNES
+
+5.1 Data Warehouse vs Data Lake vs Data Lakehouse
+- Data Warehouse (ex: BigQuery, Redshift, Snowflake) :
+  * Données structurées, schéma fixe (schema-on-write)
+  * Optimisé pour le BI et les rapports (OLAP)
+  * Coûteux mais performant
+
+- Data Lake (ex: S3, ADLS, GCS + Hadoop) :
+  * Tout format (schema-on-read), données brutes
+  * Pas cher (stockage objet), mais difficile à gouverner (data swamp)
+
+- Data Lakehouse (ex: Delta Lake, Apache Hudi, Apache Iceberg) :
+  * Combine best of both : ACID transactions + stockage objet + SQL
+  * Delta Lake : couche transactionnelle sur Parquet (journalisation)
+
+5.2 ETL vs ELT
+- ETL (Extract, Transform, Load) : transformation avant chargement → Data Warehouse traditionnel
+- ELT (Extract, Load, Transform) : chargement brut puis transformation en place → Data Lake / Lakehouse
+
+Outils ETL/ELT : Apache NiFi, dbt, Airflow, Talend, Informatica
+
+5.3 Orchestration de pipelines (Apache Airflow)
+Airflow planifie et surveille des workflows de traitement de données (DAGs).
+
+Concepts :
+- DAG (Directed Acyclic Graph) : graphe orienté sans cycle représentant le pipeline
+- Task : unité de travail (Operateur : BashOperator, PythonOperator, SparkSubmitOperator)
+- Scheduler : planifie l'exécution des DAGs
+- Executor : exécute les tasks (Sequential, Local, Celery, Kubernetes)
+
+RÉSUMÉ DES CONCEPTS CLÉS
+- Big Data 5V : Volume, Vélocité, Variété, Véracité, Valeur
+- HDFS : stockage distribué avec blocs 128MB et réplication ×3
+- MapReduce : Map (émettre pairs) → Shuffle → Reduce (agréger)
+- Spark : 10-100× plus rapide que MapReduce (in-memory), RDD + DataFrame + MLlib
+- Kafka : streaming distribué, producers/consumers/topics/partitions
+- Parquet : format columnar optimal pour l'analytique Big Data
+- Lakehouse : ACID + stockage objet (Delta Lake, Iceberg, Hudi)

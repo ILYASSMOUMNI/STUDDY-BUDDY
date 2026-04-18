@@ -1,0 +1,234 @@
+COURS : TRAITEMENT AUTOMATIQUE DU LANGAGE NATUREL (NLP) & LLMs
+Filière : IA & Data Science — EMSI Maroc
+================================================
+
+CHAPITRE 1 : FONDEMENTS DU NLP
+
+1.1 Définition et enjeux
+Le NLP (Natural Language Processing) est un domaine de l'IA qui vise à faire comprendre, analyser et générer du langage humain par les machines.
+
+Applications : chatbots, traduction automatique, analyse de sentiment, résumé de texte, extraction d'information, question-answering, génération de code.
+
+1.2 Représentation textuelle
+
+A) Approches classiques (sac de mots)
+- Tokenisation : segmentation du texte en tokens (mots, sous-mots, caractères)
+- Bag of Words (BoW) : vecteur de fréquences des mots, ignore l'ordre
+- TF-IDF (Term Frequency – Inverse Document Frequency) :
+  TF(t,d) = occurrences de t dans d / total mots dans d
+  IDF(t) = log(N / df(t))  avec N = nb documents, df(t) = docs contenant t
+  TF-IDF(t,d) = TF(t,d) × IDF(t)  →  poids fort = mot rare mais fréquent dans ce doc
+- N-grammes : séquences de N mots consécutifs (bigrammes, trigrammes)
+
+B) Approches neuronales (word embeddings)
+- Word2Vec (Mikolov et al., 2013) : entraîne des vecteurs denses de 50-300 dimensions
+  * CBOW (Continuous Bag of Words) : prédit le mot central à partir du contexte
+  * Skip-gram : prédit le contexte à partir du mot central
+  Propriétés : "roi" - "homme" + "femme" ≈ "reine" (arithmétique vectorielle)
+
+- GloVe (Global Vectors) : combine statistiques globales de co-occurrence + fenêtre locale
+
+- FastText : embeddings au niveau des sous-mots (n-grammes de caractères)
+  Avantage : gère les mots hors vocabulaire (OOV)
+
+- Embeddings contextuels (BERT, GPT) : la représentation change selon le contexte de la phrase
+
+1.3 Prétraitement NLP
+- Tokenisation : découpage en tokens
+- Suppression des stop words : mots très fréquents et peu informatifs (le, la, de, et…)
+- Stemming : réduction à la racine morphologique (ex: "jouer", "jouons" → "jou")
+- Lemmatisation : réduction à la forme canonique (ex: "mangeons" → "manger")
+- Normalisation : minuscules, suppression de la ponctuation, accents
+- Padding/Truncation : uniformiser la longueur des séquences
+
+CHAPITRE 2 : TÂCHES FONDAMENTALES EN NLP
+
+2.1 Analyse de sentiment (Sentiment Analysis)
+Classifie le sentiment d'un texte : positif, négatif, neutre.
+Niveau d'analyse : document, phrase, aspect (ABSA).
+Applications : avis clients, réseaux sociaux, monitoring de marque.
+
+2.2 Classification de texte
+Assigne une ou plusieurs catégories à un texte.
+Exemples : détection de spam, catégorisation d'articles, détection de haine (hate speech).
+Approches : Naive Bayes, SVM + TF-IDF, BERT fine-tuné.
+
+2.3 Named Entity Recognition (NER)
+Identifie et classifie les entités nommées : personnes (PER), organisations (ORG), lieux (LOC), dates (DATE).
+Modèles : CRF (Conditional Random Fields), BiLSTM-CRF, BERT-NER.
+
+2.4 Traduction automatique (Machine Translation)
+Architectures : SMT (Statistical MT) → NMT (Neural MT) avec Seq2Seq → Transformer.
+Métriques d'évaluation : BLEU Score (Bilingual Evaluation Understudy).
+
+2.5 Résumé automatique (Summarization)
+- Extractif : sélectionne les phrases les plus importantes du document original
+- Abstractif : génère un résumé nouveau (nécessite un modèle génératif)
+Modèles : BART, T5, Pegasus.
+
+2.6 Question Answering (QA)
+- Extractif : localise la réponse dans un contexte fourni (SQuAD benchmark)
+- Génératif : génère la réponse librement (ChatGPT, RAG)
+- Open-domain : sans contexte fixe, nécessite un retriever + reader
+
+2.7 Génération de texte (Text Generation)
+Génère du texte cohérent token par token (autorégressif).
+Stratégies de décodage :
+- Greedy search : choisit toujours le token le plus probable
+- Beam search : garde les K meilleures hypothèses à chaque étape
+- Temperature sampling : divise les logits par T avant softmax (T<1 = plus déterministe)
+- Top-K sampling : échantillonne parmi les K tokens les plus probables
+- Top-P (nucleus) sampling : échantillonne dans le plus petit ensemble dont la prob. cumulée ≥ p
+
+CHAPITRE 3 : ARCHITECTURE BERT
+
+3.1 Présentation
+BERT (Bidirectional Encoder Representations from Transformers) — Devlin et al., Google, 2018.
+C'est un modèle encodeur-seulement, pré-entraîné de manière bidirectionnelle.
+
+Architecture : 12 couches Transformer (BERT-base) ou 24 (BERT-large).
+Paramètres : 110M (base) ou 340M (large).
+
+3.2 Pré-entraînement
+BERT est pré-entraîné sur deux tâches non supervisées :
+
+a) Masked Language Model (MLM) :
+- 15% des tokens sont masqués aléatoirement avec [MASK]
+- Le modèle doit prédire le token original
+- Permet un apprentissage bidirectionnel (contexte gauche ET droite)
+
+b) Next Sentence Prediction (NSP) :
+- Prédit si deux phrases se suivent réellement dans le texte
+- Utile pour les tâches de compréhension de la relation inter-phrases
+
+3.3 Tokens spéciaux
+- [CLS] : token de classification, sa représentation encode toute la phrase
+- [SEP] : séparateur entre deux phrases
+- [PAD] : rembourrage pour uniformiser la longueur
+- [MASK] : token masqué pendant le MLM
+
+3.4 Fine-tuning de BERT
+Pour adapter BERT à une tâche spécifique :
+1. Ajouter une tête de classification (dense layer) sur le token [CLS]
+2. Entraîner tout le modèle (ou seulement la tête) sur les données labellisées
+3. Learning rate faible : 2e-5 à 5e-5 (pour ne pas détruire les connaissances pré-apprises)
+
+Exemple PyTorch :
+  from transformers import BertTokenizer, BertForSequenceClassification
+  tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+  model = BertForSequenceClassification.from_pretrained('bert-base-multilingual-cased', num_labels=3)
+  inputs = tokenizer(texte, return_tensors='pt', padding=True, truncation=True, max_length=512)
+  outputs = model(**inputs)
+  logits = outputs.logits
+
+CHAPITRE 4 : GRANDS MODÈLES DE LANGAGE (LLMs)
+
+4.1 Définition
+Un Grand Modèle de Langage (Large Language Model, LLM) est un modèle Transformer de très grande taille (milliards de paramètres) pré-entraîné sur des corpus massifs.
+Exemples : GPT-4, Claude, Llama, Mistral, Gemini, Falcon.
+
+4.2 Paradigme "Pré-entraînement + Fine-tuning + RLHF"
+
+a) Pré-entraînement :
+- Objectif : modélisation du langage (prédire le prochain token)
+- Données : corpus massifs (web, livres, code) — des centaines de milliards de tokens
+- Durée : semaines/mois sur des clusters GPU/TPU
+
+b) Supervised Fine-Tuning (SFT) :
+- Adapter le modèle à un format instruction-réponse
+- Données : paires (instruction, réponse de qualité) rédigées par des humains
+
+c) RLHF (Reinforcement Learning from Human Feedback) :
+- Modèle de récompense entraîné sur des préférences humaines
+- Optimisation PPO pour aligner le LLM sur les préférences humaines
+
+4.3 Concepts clés des LLMs
+
+Prompt Engineering :
+- Zero-shot : aucun exemple dans le prompt
+- Few-shot : quelques exemples fournis dans le prompt (in-context learning)
+- Chain-of-Thought (CoT) : demander au modèle de raisonner étape par étape
+- System prompt : instructions globales définissant le comportement de l'assistant
+
+Context Window (Fenêtre de contexte) :
+- Nombre maximal de tokens traités simultanément
+- Exemples : GPT-3.5 = 4K, GPT-4 = 128K, Claude 3 = 200K tokens
+- Dépasse la limite → troncation ou résumé nécessaire
+
+Tokenisation :
+- BPE (Byte Pair Encoding) : algorithme de tokenisation subword le plus utilisé
+- SentencePiece, WordPiece : variantes
+- Un token ≈ 3/4 de mot en anglais
+
+Hallucinations :
+- Le modèle génère des informations plausibles mais fausses
+- Causes : manque de données, surajustement au style de langage, confiance excessive
+- Mitigation : RAG, grounding, citation des sources, température basse
+
+4.4 RAG (Retrieval-Augmented Generation)
+Architecture hybride qui combine récupération de documents + génération LLM.
+
+Pipeline RAG :
+1. Indexation : découpage des documents en chunks → embeddings → base vectorielle
+2. Retrieval : à chaque question, embedding de la query → recherche des k chunks les plus proches
+3. Augmentation : injection des chunks dans le contexte du LLM
+4. Génération : le LLM génère une réponse basée sur les documents récupérés
+
+Avantages :
+- Réduit les hallucinations (informations ancrées)
+- Connaissances actualisables sans ré-entraîner le modèle
+- Traçabilité (sources citables)
+
+Composants :
+- Embedding model : SentenceTransformers, OpenAI Embeddings
+- Vector DB : ChromaDB, Pinecone, Weaviate, FAISS, Qdrant
+- LLM : OpenAI GPT, Anthropic Claude, Mistral, Llama
+
+4.5 Fine-tuning efficace (Parameter-Efficient Fine-Tuning)
+- LoRA (Low-Rank Adaptation) : ajoute des matrices de faible rang, seules celles-ci sont entraînées → ~1% des paramètres
+- QLoRA : LoRA + quantification 4-bit → fine-tuning sur GPU grand public
+- Adapters : modules supplémentaires légers insérés entre les couches
+- Prefix Tuning / Prompt Tuning : optimise uniquement les embeddings de préfixe
+
+4.6 Évaluation des LLMs
+- MMLU : évaluation multi-domaines (57 sujets académiques)
+- HellaSwag : complétion de phrases de bon sens
+- HumanEval : génération de code
+- MT-Bench : évaluation multi-tours par un juge LLM
+- BERTScore : similarité sémantique avec les réponses de référence
+
+CHAPITRE 5 : EMBEDDINGS POUR LE NLP MODERNE
+
+5.1 Sentence Embeddings
+Représentation vectorielle d'une phrase entière dans un espace sémantique.
+Modèles : Sentence-BERT (SBERT), Universal Sentence Encoder, E5, BGE.
+
+Propriété clé : distance cosinus ≈ similarité sémantique
+cos(u,v) = u·v / (||u|| × ||v||)
+
+5.2 Bases de données vectorielles
+Permettent la recherche par similarité sémantique à grande échelle.
+
+- ChromaDB : léger, open-source, parfait pour les prototypes
+- FAISS (Facebook AI Similarity Search) : très rapide, CPU/GPU
+- Pinecone : solution managée cloud
+- Weaviate : open-source avec support d'objets structurés
+- Qdrant : hautes performances, filtrage avancé
+
+Indexation HNSW (Hierarchical Navigable Small World) :
+Structure de graphe hiérarchique pour la recherche approximative du plus proche voisin (ANN).
+Compromis : vitesse vs précision (recall).
+
+5.3 Similarité et distance
+- Distance cosinus : mesure l'angle entre deux vecteurs (insensible à la norme)
+- Distance euclidienne : distance L2 dans l'espace vectoriel
+- Produit scalaire (dot product) : rapide, utilisé quand les embeddings sont normalisés
+
+RÉSUMÉ DES CONCEPTS CLÉS
+- NLP : compréhension et génération du langage naturel par les machines
+- Embeddings : TF-IDF (classique), Word2Vec/GloVe (statique), BERT (contextuel)
+- BERT : Transformer bidirectionnel, pré-entraîné MLM + NSP, fine-tunable
+- LLMs : modèles milliards de paramètres, pré-entraînement + RLHF
+- RAG : retrieval + génération → réduit les hallucinations, connaissances actualisables
+- LoRA : fine-tuning efficace (1% des paramètres)
+- Vector DB : ChromaDB, FAISS, Pinecone → recherche sémantique à grande échelle
