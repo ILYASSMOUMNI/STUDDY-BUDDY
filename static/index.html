@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyBuddy — Tuteur IA · EMSI</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+          colors: {
+            sidebar: '#0F172A',
+            'sidebar-hover': '#1E293B',
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+
+  <!-- marked.js (markdown renderer) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+    [x-cloak] { display: none !important; }
+
+    /* Markdown inside chat */
+    .md-content h1, .md-content h2, .md-content h3 { font-weight: 600; margin: 0.8em 0 0.4em; line-height: 1.3; }
+    .md-content h1 { font-size: 1.25em; }
+    .md-content h2 { font-size: 1.1em; }
+    .md-content h3 { font-size: 1em; }
+    .md-content p { margin-bottom: 0.6em; line-height: 1.7; }
+    .md-content ul, .md-content ol { padding-left: 1.4em; margin-bottom: 0.6em; }
+    .md-content ul li { list-style-type: disc; margin-bottom: 0.2em; }
+    .md-content ol li { list-style-type: decimal; margin-bottom: 0.2em; }
+    .md-content code { background: #F1F5F9; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.875em; font-family: 'Courier New', monospace; color: #4F46E5; }
+    .md-content pre { background: #1E293B; color: #E2E8F0; padding: 1em; border-radius: 8px; overflow-x: auto; margin-bottom: 0.75em; }
+    .md-content pre code { background: none; color: inherit; padding: 0; }
+    .md-content blockquote { border-left: 3px solid #6366F1; padding-left: 1em; color: #64748B; font-style: italic; margin: 0.5em 0; }
+    .md-content strong { font-weight: 600; color: #1E293B; }
+    .md-content a { color: #4F46E5; text-decoration: underline; }
+    .md-content table { width: 100%; border-collapse: collapse; margin-bottom: 0.75em; font-size: 0.875em; }
+    .md-content th, .md-content td { border: 1px solid #E2E8F0; padding: 0.5em 0.75em; text-align: left; }
+    .md-content th { background: #F8FAFC; font-weight: 600; }
+
+    /* Thinking dots animation */
+    @keyframes dot-bounce { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-6px); opacity: 1; } }
+    .dot-1 { animation: dot-bounce 1.2s infinite 0s; }
+    .dot-2 { animation: dot-bounce 1.2s infinite 0.2s; }
+    .dot-3 { animation: dot-bounce 1.2s infinite 0.4s; }
+
+    /* Score circle animation */
+    .score-ring { transition: stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+    /* Nav active indicator */
+    .nav-active { position: relative; }
+    .nav-active::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 50%;
+      transform: translateY(-50%);
+      width: 3px; height: 60%;
+      background: #6366F1;
+      border-radius: 0 3px 3px 0;
+    }
+
+    /* Card hover lift */
+    .card-hover { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+
+    /* Quiz option */
+    .quiz-opt { transition: all 0.15s ease; }
+    .quiz-opt:not(.opt-correct):not(.opt-wrong):not(.opt-dim):hover {
+      border-color: #6366F1 !important;
+      background: #EEF2FF !important;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-50 font-sans text-slate-800 antialiased" x-data="app()" x-cloak>
+
+<!-- ===================== LOADING SPLASH ===================== -->
+<div x-show="!initialized" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50 gap-4">
+  <div class="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+    <i class="fas fa-graduation-cap text-white text-2xl"></i>
+  </div>
+  <div class="flex gap-2 items-center">
+    <span class="inline-block w-2 h-2 bg-indigo-400 rounded-full dot-1"></span>
+    <span class="inline-block w-2 h-2 bg-indigo-400 rounded-full dot-2"></span>
+    <span class="inline-block w-2 h-2 bg-indigo-400 rounded-full dot-3"></span>
+  </div>
+  <p class="text-slate-400 text-sm">Chargement de StudyBuddy...</p>
+</div>
+
+<!-- ===================== TOAST STACK ===================== -->
+<div class="fixed top-4 right-4 z-50 flex flex-col gap-2" style="min-width:300px">
+  <template x-for="t in toasts" :key="t.id">
+    <div
+      x-show="t.show"
+      x-transition:enter="transition ease-out duration-250"
+      x-transition:enter-start="opacity-0 translate-x-6"
+      x-transition:enter-end="opacity-100 translate-x-0"
+      x-transition:leave="transition ease-in duration-200"
+      x-transition:leave-start="opacity-100 translate-x-0"
+      x-transition:leave-end="opacity-0 translate-x-6"
+      class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium border"
+      :class="{
+        'bg-green-50 border-green-200 text-green-800': t.type==='success',
+        'bg-red-50 border-red-200 text-red-800': t.type==='error',
+        'bg-blue-50 border-blue-200 text-blue-800': t.type==='info',
+        'bg-amber-50 border-amber-200 text-amber-800': t.type==='warning',
+      }"
+    >
+      <i class="text-base" :class="{
+        'fas fa-check-circle text-green-500': t.type==='success',
+        'fas fa-times-circle text-red-500': t.type==='error',
+        'fas fa-info-circle text-blue-500': t.type==='info',
+        'fas fa-exclamation-triangle text-amber-500': t.type==='warning',
+      }"></i>
+      <span x-text="t.msg" class="flex-1"></span>
+    </div>
+  </template>
+</div>
+
+<!-- ===================== LOGIN PAGE ===================== -->
+<template x-if="initialized && !user">
+  <div class="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+       style="background: linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4C1D95 100%);">
+
+    <!-- BG blobs -->
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+      <div class="absolute -top-32 -right-32 w-96 h-96 bg-indigo-400 opacity-10 rounded-full blur-3xl"></div>
+      <div class="absolute -bottom-32 -left-32 w-96 h-96 bg-purple-400 opacity-10 rounded-full blur-3xl"></div>
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
+    </div>
+
+    <div class="relative w-full max-w-md">
+      <!-- Hero -->
+      <div class="text-center mb-8">
+        <div class="inline-flex w-20 h-20 bg-white/10 backdrop-blur border border-white/20 rounded-3xl items-center justify-center mb-5 shadow-2xl">
+          <i class="fas fa-graduation-cap text-white text-3xl"></i>
+        </div>
+        <h1 class="text-4xl font-extrabold text-white tracking-tight">StudyBuddy</h1>
+        <p class="text-indigo-300 mt-2 text-base">Tuteur IA personnalisé · EMSI Morocco</p>
+        <div class="flex items-center justify-center gap-4 mt-4">
+          <span class="flex items-center gap-1.5 text-indigo-300 text-xs"><i class="fas fa-brain text-indigo-400"></i> Multi-Agents</span>
+          <span class="text-indigo-600">·</span>
+          <span class="flex items-center gap-1.5 text-indigo-300 text-xs"><i class="fas fa-database text-indigo-400"></i> RAG</span>
+          <span class="text-indigo-600">·</span>
+          <span class="flex items-center gap-1.5 text-indigo-300 text-xs"><i class="fas fa-shield-alt text-indigo-400"></i> MCP</span>
+        </div>
+      </div>
+
+      <!-- Card -->
+      <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div class="p-8">
+          <h2 class="text-xl font-bold text-slate-800 mb-1">Commencer votre session</h2>
+          <p class="text-sm text-slate-400 mb-6">Entrez vos informations pour accéder au tuteur</p>
+
+          <div x-show="login.error" class="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-5">
+            <i class="fas fa-exclamation-circle flex-shrink-0"></i>
+            <span x-text="login.error"></span>
+          </div>
+
+          <form @submit.prevent="loginUser()" class="space-y-4">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Nom complet</label>
+              <div class="relative">
+                <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
+                <input type="text" x-model="login.name" placeholder="Ahmed Benali"
+                  class="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  :disabled="login.loading" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Email</label>
+              <div class="relative">
+                <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
+                <input type="email" x-model="login.email" placeholder="ahmed@emsi.ma"
+                  class="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  :disabled="login.loading" />
+              </div>
+            </div>
+
+            <button type="submit"
+              class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 mt-2 disabled:opacity-60"
+              :disabled="login.loading">
+              <i x-show="!login.loading" class="fas fa-arrow-right"></i>
+              <i x-show="login.loading" class="fas fa-spinner fa-spin"></i>
+              <span x-text="login.loading ? 'Connexion...' : 'Accéder au tuteur IA'"></span>
+            </button>
+          </form>
+        </div>
+
+        <div class="bg-slate-50 px-8 py-4 border-t border-slate-100 text-center">
+          <p class="text-xs text-slate-400">IA Distribuée · EMSI · <span x-text="new Date().getFullYear()"></span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ===================== MAIN APP ===================== -->
+<template x-if="initialized && user">
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- ── SIDEBAR ── -->
+    <aside class="flex-shrink-0 flex flex-col h-full overflow-hidden"
+           :style="sidebarOpen ? 'width:240px' : 'width:64px'"
+           style="background:#0F172A; transition: width 0.2s ease;">
+
+      <!-- Brand -->
+      <div class="h-16 flex items-center px-4 border-b border-white/5 flex-shrink-0">
+        <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
+          <i class="fas fa-graduation-cap text-white text-sm"></i>
+        </div>
+        <div x-show="sidebarOpen" class="ml-3 overflow-hidden whitespace-nowrap">
+          <span class="font-bold text-white text-base">StudyBuddy</span>
+        </div>
+      </div>
+
+      <!-- Nav items -->
+      <nav class="flex-1 px-2 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
+        <template x-for="item in navItems" :key="item.view">
+          <button @click="navigate(item.view)"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all relative"
+            :class="view === item.view
+              ? 'bg-indigo-600 text-white nav-active'
+              : 'text-slate-400 hover:bg-white/5 hover:text-white'">
+            <i :class="item.icon + ' w-5 text-center flex-shrink-0 text-base'"></i>
+            <span x-show="sidebarOpen" class="whitespace-nowrap overflow-hidden" x-text="item.label"></span>
+          </button>
+        </template>
+      </nav>
+
+      <!-- User footer -->
+      <div class="border-t border-white/5 p-3 flex-shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center flex-shrink-0">
+            <span class="text-white text-xs font-bold" x-text="initials()"></span>
+          </div>
+          <div x-show="sidebarOpen" class="flex-1 min-w-0 overflow-hidden">
+            <p class="text-sm font-semibold text-white truncate" x-text="user.name"></p>
+            <p class="text-xs text-slate-500 truncate" x-text="user.email"></p>
+          </div>
+          <button x-show="sidebarOpen" @click="logout()"
+            title="Déconnexion"
+            class="text-slate-500 hover:text-white transition flex-shrink-0 p-1 rounded-lg hover:bg-white/5">
+            <i class="fas fa-sign-out-alt text-sm"></i>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── MAIN AREA ── -->
+    <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+
+      <!-- Topbar -->
+      <header class="h-16 bg-white border-b border-slate-200 flex items-center px-5 gap-4 flex-shrink-0 shadow-sm">
+        <button @click="sidebarOpen = !sidebarOpen"
+          class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+          <i class="fas fa-bars text-sm"></i>
+        </button>
+
+        <!-- Breadcrumb -->
+        <div class="flex items-center gap-2 flex-1">
+          <span class="text-xs text-slate-400">StudyBuddy</span>
+          <i class="fas fa-chevron-right text-slate-300 text-xs"></i>
+          <span class="text-sm font-semibold text-slate-800" x-text="pageTitle()"></span>
+        </div>
+
+        <!-- Lang toggle -->
+        <div class="flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
+          <button @click="lang='fr'" class="px-3 py-1 rounded-md text-xs font-semibold transition"
+            :class="lang==='fr' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'">FR</button>
+          <button @click="lang='en'" class="px-3 py-1 rounded-md text-xs font-semibold transition"
+            :class="lang==='en' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'">EN</button>
+        </div>
+
+        <!-- Avatar -->
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-slate-500 hidden sm:block" x-text="'Bonjour, ' + user.name.split(' ')[0]"></span>
+          <div class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+            <span class="text-white text-xs font-bold" x-text="initials()"></span>
+          </div>
+        </div>
+      </header>
+
+      <!-- ── VIEWS ── -->
+      <main class="flex-1 overflow-hidden">
+
+        <!-- ====== DASHBOARD ====== -->
+        <div x-show="view==='dashboard'" class="h-full overflow-y-auto p-6 space-y-6">
+
+          <!-- Welcome bar -->
+          <div>
+            <h2 class="text-2xl font-bold text-slate-800">Tableau de bord</h2>
+            <p class="text-sm text-slate-400 mt-0.5" x-text="'Bonjour ' + user.name + ' — voici votre progression'"></p>
+          </div>
+
+          <!-- KPI cards -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm card-hover">
+              <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                  <i class="fas fa-question-circle text-indigo-600"></i>
+                </div>
+                <span class="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Total</span>
+              </div>
+              <p class="text-3xl font-extrabold text-slate-800" x-text="dash.stats?.total_questions ?? 0"></p>
+              <p class="text-sm text-slate-400 mt-1">Questions répondues</p>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm card-hover">
+              <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                  <i class="fas fa-chart-line text-green-600"></i>
+                </div>
+                <span class="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Global</span>
+              </div>
+              <p class="text-3xl font-extrabold" :class="scoreColor(dash.stats?.score_global??0)"
+                 x-text="(dash.stats?.score_global ?? 0) + '%'"></p>
+              <p class="text-sm text-slate-400 mt-1">Score moyen</p>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm card-hover">
+              <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <i class="fas fa-book-open text-blue-600"></i>
+                </div>
+                <span class="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Cours</span>
+              </div>
+              <p class="text-3xl font-extrabold text-slate-800" x-text="courses.length"></p>
+              <p class="text-sm text-slate-400 mt-1">Cours disponibles</p>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm card-hover">
+              <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                  <i class="fas fa-exclamation-triangle text-red-600"></i>
+                </div>
+                <span class="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Lacunes</span>
+              </div>
+              <p class="text-3xl font-extrabold text-red-500" x-text="dash.weaknesses?.length ?? 0"></p>
+              <p class="text-sm text-slate-400 mt-1">Points faibles</p>
+            </div>
+
+          </div>
+
+          <!-- Progress + Activity row -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Course progress -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-chart-bar text-indigo-500"></i> Progression par cours
+              </h3>
+              <div x-show="!dash.progress || dash.progress.length === 0" class="text-slate-400 text-sm text-center py-8">
+                <i class="fas fa-info-circle mb-2 block text-xl text-slate-300"></i>
+                Faites votre premier quiz pour voir la progression
+              </div>
+              <div class="space-y-4">
+                <template x-for="c in (dash.progress || [])" :key="c.id">
+                  <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                      <span class="text-sm font-medium text-slate-700 truncate flex-1 mr-2" x-text="c.title"></span>
+                      <span class="text-sm font-bold flex-shrink-0" :class="scoreColor(c.score_pct)" x-text="c.score_pct + '%'"></span>
+                    </div>
+                    <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-700"
+                        :class="c.score_pct>=80?'bg-green-500':c.score_pct>=60?'bg-amber-400':c.score_pct>0?'bg-indigo-500':'bg-slate-200'"
+                        :style="'width:'+Math.max(2,c.score_pct)+'%'"></div>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-1" x-text="c.attempts+' tentatives · '+(c.weakness_count||0)+' lacune(s)'"></p>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Recent activity -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-clock text-indigo-500"></i> Activité récente
+              </h3>
+              <div x-show="!dash.activity || dash.activity.length === 0" class="text-slate-400 text-sm text-center py-8">
+                <i class="fas fa-history mb-2 block text-xl text-slate-300"></i>
+                Aucune activité pour le moment
+              </div>
+              <div class="space-y-3">
+                <template x-for="(a, i) in (dash.activity || []).slice(0,6)" :key="i">
+                  <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                      :class="a.activity_type==='quiz'?'bg-purple-100':'bg-blue-100'">
+                      <i class="text-sm" :class="a.activity_type==='quiz'?'fas fa-clipboard-check text-purple-600':'fas fa-comments text-blue-600'"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm text-slate-700 leading-tight">
+                        <span class="font-medium" x-text="a.activity_type==='quiz'?'Quiz':'Chat'"></span>
+                        <span class="text-slate-400"> · </span>
+                        <span class="truncate" x-text="a.course_title||'Général'"></span>
+                      </p>
+                      <p class="text-xs text-slate-400 mt-0.5" x-text="fmtDate(a.created_at)"></p>
+                    </div>
+                    <template x-if="a.activity_type==='quiz'">
+                      <span class="text-xs px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                        :class="a.is_correct?'bg-green-100 text-green-700':'bg-red-100 text-red-700'"
+                        x-text="a.is_correct ? '✓ Correct' : '✗ Faux'"></span>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Recommendations -->
+          <div x-show="dash.recommendations && dash.recommendations.length > 0">
+            <h3 class="font-bold text-slate-800 mb-3 flex items-center gap-2">
+              <i class="fas fa-lightbulb text-amber-500"></i> Recommandations personnalisées
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <template x-for="(r,i) in (dash.recommendations||[]).slice(0,3)" :key="i">
+                <div @click="handleRec(r)"
+                  class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm cursor-pointer card-hover hover:border-indigo-300">
+                  <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      :class="r.type==='resume_chat'?'bg-blue-100':r.type==='targeted_quiz'?'bg-purple-100':'bg-green-100'">
+                      <i :class="r.type==='resume_chat'?'fas fa-play text-blue-600':r.type==='targeted_quiz'?'fas fa-bullseye text-purple-600':'fas fa-rocket text-green-600'"></i>
+                    </div>
+                    <div>
+                      <p class="text-sm font-bold text-slate-800" x-text="recTitle(r)"></p>
+                      <p class="text-xs text-slate-400 truncate" x-text="r.course_title||''"></p>
+                    </div>
+                  </div>
+                  <p class="text-xs text-slate-500" x-text="recDesc(r)"></p>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+        <!-- ====== END DASHBOARD ====== -->
+
+
+        <!-- ====== CHAT ====== -->
+        <div x-show="view==='chat'" class="h-full flex" style="height:calc(100vh - 4rem)">
+
+          <!-- Course panel -->
+          <div class="w-60 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col">
+            <div class="px-4 py-3 border-b border-slate-100">
+              <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Contexte</p>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-2">
+              <button @click="selectCourse(null)"
+                class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition mb-1"
+                :class="chat.courseId===null?'bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200':'text-slate-600 hover:bg-slate-50'">
+                <i class="fas fa-globe w-4 text-center text-sm flex-shrink-0"
+                  :class="chat.courseId===null?'text-indigo-500':'text-slate-400'"></i>
+                <span>Tous les cours</span>
+              </button>
+
+              <template x-for="c in courses" :key="c.id">
+                <button @click="selectCourse(c.id)"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition mb-1 text-left"
+                  :class="chat.courseId===c.id?'bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200':'text-slate-600 hover:bg-slate-50'">
+                  <i class="fas fa-file-alt w-4 text-center text-sm flex-shrink-0"
+                    :class="chat.courseId===c.id?'text-indigo-500':'text-slate-400'"></i>
+                  <span class="truncate" x-text="c.title"></span>
+                </button>
+              </template>
+
+              <div x-show="courses.length===0" class="text-center text-slate-400 text-xs mt-6 px-2">
+                <i class="fas fa-book-open text-2xl text-slate-200 mb-2 block"></i>
+                Aucun cours.<br>
+                <button @click="navigate('courses')" class="text-indigo-500 underline mt-1">En ajouter</button>
+              </div>
+            </div>
+
+            <!-- Mode selector -->
+            <div class="border-t border-slate-100 p-3">
+              <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Mode</p>
+              <div class="space-y-0.5">
+                <template x-for="m in chatModes" :key="m.v">
+                  <button @click="chat.mode=m.v"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition"
+                    :class="chat.mode===m.v?'bg-indigo-50 text-indigo-700 font-semibold':'text-slate-500 hover:bg-slate-50'">
+                    <i :class="m.icon+' w-3 text-center'"></i>
+                    <span x-text="m.label"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- Reset -->
+            <div class="p-3 border-t border-slate-100">
+              <button @click="chat.messages=[];chat.input=''"
+                class="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl hover:border-slate-300 transition flex items-center justify-center gap-1.5">
+                <i class="fas fa-plus"></i> Nouvelle session
+              </button>
+            </div>
+          </div>
+
+          <!-- Chat main -->
+          <div class="flex-1 flex flex-col min-w-0 bg-slate-50">
+
+            <!-- Chat topbar -->
+            <div class="h-14 bg-white border-b border-slate-200 flex items-center px-5 gap-3 flex-shrink-0">
+              <div class="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <i class="fas fa-robot text-indigo-600 text-sm"></i>
+              </div>
+              <div>
+                <p class="text-sm font-bold text-slate-800" x-text="chat.courseId ? getCourse(chat.courseId)?.title : 'Base de connaissance complète'"></p>
+                <p class="text-xs text-slate-400" x-text="chatModes.find(m=>m.v===chat.mode)?.label ?? ''"></p>
+              </div>
+            </div>
+
+            <!-- Messages -->
+            <div id="chat-msgs" class="flex-1 overflow-y-auto p-5 space-y-5">
+
+              <!-- Empty state -->
+              <div x-show="chat.messages.length===0" class="flex flex-col items-center justify-center h-full text-center pb-8">
+                <div class="w-20 h-20 bg-indigo-100 rounded-3xl flex items-center justify-center mb-5">
+                  <i class="fas fa-comments text-indigo-400 text-3xl"></i>
+                </div>
+                <h3 class="font-bold text-slate-700 text-lg mb-2">Posez votre question</h3>
+                <p class="text-sm text-slate-400 max-w-xs mb-6">
+                  Le tuteur IA peut expliquer, donner des exemples ou résumer n'importe quel concept de
+                  <span class="font-medium" x-text="chat.courseId ? getCourse(chat.courseId)?.title : 'vos cours'"></span>.
+                </p>
+                <!-- Quick suggestions -->
+                <div class="flex flex-wrap gap-2 justify-center max-w-sm">
+                  <template x-for="(s,i) in suggestions" :key="i">
+                    <button @click="chat.input=s; sendMsg()"
+                      class="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-full text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition"
+                      x-text="s"></button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Message list -->
+              <template x-for="(msg, i) in chat.messages" :key="i">
+                <div class="flex" :class="msg.role==='user' ? 'justify-end' : 'justify-start'">
+
+                  <!-- AI message -->
+                  <template x-if="msg.role==='assistant'">
+                    <div class="flex items-start gap-3 max-w-3xl w-full">
+                      <div class="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <i class="fas fa-robot text-indigo-600 text-xs"></i>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <!-- Thinking -->
+                        <template x-if="msg.thinking">
+                          <div class="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
+                            <span class="w-2 h-2 bg-indigo-400 rounded-full dot-1"></span>
+                            <span class="w-2 h-2 bg-indigo-400 rounded-full dot-2"></span>
+                            <span class="w-2 h-2 bg-indigo-400 rounded-full dot-3"></span>
+                          </div>
+                        </template>
+                        <!-- Response -->
+                        <template x-if="!msg.thinking">
+                          <div class="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-5 py-4 shadow-sm md-content text-sm"
+                            x-html="renderMd(msg.content)"></div>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- User message -->
+                  <template x-if="msg.role==='user'">
+                    <div class="max-w-xl">
+                      <div class="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-5 py-3.5 text-sm leading-relaxed shadow-sm">
+                        <span x-text="msg.content"></span>
+                      </div>
+                    </div>
+                  </template>
+
+                </div>
+              </template>
+
+            </div>
+
+            <!-- Input bar -->
+            <div class="bg-white border-t border-slate-200 p-4 flex-shrink-0">
+              <div class="flex items-end gap-3">
+                <textarea
+                  x-model="chat.input"
+                  @keydown.enter.exact.prevent="sendMsg()"
+                  rows="1"
+                  placeholder="Écrivez votre question... (Entrée pour envoyer)"
+                  class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 transition max-h-28"
+                  :disabled="chat.sending"
+                ></textarea>
+                <button @click="sendMsg()"
+                  class="w-11 h-11 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center justify-center transition flex-shrink-0 disabled:opacity-40"
+                  :disabled="chat.sending || !chat.input.trim()">
+                  <i x-show="!chat.sending" class="fas fa-paper-plane text-sm"></i>
+                  <i x-show="chat.sending" class="fas fa-spinner fa-spin text-sm"></i>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <!-- ====== END CHAT ====== -->
+
+
+        <!-- ====== QUIZ ====== -->
+        <div x-show="view==='quiz'" class="h-full overflow-y-auto p-6">
+
+          <!-- CONFIG -->
+          <div x-show="quiz.phase==='config'" class="max-w-lg mx-auto">
+            <div class="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm">
+              <div class="flex items-center gap-4 mb-7">
+                <div class="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center">
+                  <i class="fas fa-clipboard-check text-purple-600 text-2xl"></i>
+                </div>
+                <div>
+                  <h2 class="text-xl font-bold text-slate-800">Générer un Quiz</h2>
+                  <p class="text-sm text-slate-400">Testez vos connaissances avec l'IA</p>
+                </div>
+              </div>
+
+              <div class="space-y-5">
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Cours <span class="text-red-400">*</span>
+                  </label>
+                  <select x-model="quiz.courseId"
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="">— Sélectionner un cours —</option>
+                    <template x-for="c in courses" :key="c.id">
+                      <option :value="c.id" x-text="c.title"></option>
+                    </template>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Sujet / Concept <span class="text-red-400">*</span>
+                  </label>
+                  <input type="text" x-model="quiz.topic" placeholder="Ex: MapReduce, HDFS, Spark..."
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">
+                      Nombre : <span class="text-indigo-600 font-bold" x-text="quiz.numQ"></span>
+                    </label>
+                    <input type="range" min="3" max="10" x-model.number="quiz.numQ"
+                      class="w-full accent-indigo-600 cursor-pointer" />
+                    <div class="flex justify-between text-xs text-slate-400 mt-1">
+                      <span>3</span><span>10</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1.5">Difficulté</label>
+                    <div class="flex gap-1">
+                      <template x-for="d in [{v:'easy',l:'Facile'},{v:'medium',l:'Moyen'},{v:'hard',l:'Difficile'}]" :key="d.v">
+                        <button @click="quiz.diff=d.v"
+                          class="flex-1 py-2 px-1 text-xs rounded-lg border transition font-semibold"
+                          :class="quiz.diff===d.v?'bg-indigo-600 text-white border-indigo-600':'border-slate-200 text-slate-500 hover:border-slate-300'"
+                          x-text="d.l"></button>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <button @click="startQuiz()"
+                  class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  :disabled="!quiz.courseId||!quiz.topic.trim()||quiz.loading">
+                  <i x-show="!quiz.loading" class="fas fa-magic"></i>
+                  <i x-show="quiz.loading" class="fas fa-spinner fa-spin"></i>
+                  <span x-text="quiz.loading ? 'Génération IA en cours...' : 'Générer le quiz'"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAKING -->
+          <div x-show="quiz.phase==='taking'" class="max-w-2xl mx-auto space-y-5">
+
+            <!-- Progress bar -->
+            <div class="bg-white rounded-xl px-6 py-4 border border-slate-200 shadow-sm">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-slate-700">
+                  Question <span x-text="quiz.qi+1"></span>/<span x-text="quiz.data?.questions?.length"></span>
+                </span>
+                <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full" x-text="quiz.data?.concept||quiz.topic"></span>
+              </div>
+              <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                  :style="'width:'+((quiz.qi+1)/(quiz.data?.questions?.length||1)*100)+'%'"></div>
+              </div>
+            </div>
+
+            <!-- Question card -->
+            <div class="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm">
+              <p class="text-lg font-bold text-slate-800 mb-6 leading-relaxed"
+                x-text="quiz.data?.questions?.[quiz.qi]?.question"></p>
+
+              <div class="space-y-3">
+                <template x-for="(opt,oi) in (quiz.data?.questions?.[quiz.qi]?.options||[])" :key="oi">
+                  <button @click="!quiz.answered && pickAnswer(opt)"
+                    class="quiz-opt w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 text-left text-sm font-medium"
+                    :class="optClass(opt)">
+                    <span class="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0"
+                      :class="optLabelClass(opt, oi)"
+                      x-text="['A','B','C','D'][oi]"></span>
+                    <span x-text="opt"></span>
+                  </button>
+                </template>
+              </div>
+
+              <!-- Explanation (after answer) -->
+              <div x-show="quiz.answered && quiz.data?.questions?.[quiz.qi]?.explanation"
+                class="mt-5 p-4 bg-sky-50 border border-sky-200 rounded-xl text-sm text-sky-800">
+                <i class="fas fa-info-circle mr-2"></i>
+                <span x-text="quiz.data?.questions?.[quiz.qi]?.explanation||''"></span>
+              </div>
+
+              <button x-show="quiz.answered" @click="nextQ()"
+                class="mt-6 w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2">
+                <span x-text="quiz.qi<(quiz.data?.questions?.length||0)-1?'Question suivante →':'Voir les résultats →'"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- RESULT -->
+          <div x-show="quiz.phase==='result'" class="max-w-2xl mx-auto space-y-5">
+
+            <!-- Score card -->
+            <div class="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center">
+              <h2 class="text-2xl font-extrabold text-slate-800 mb-1">Résultat du Quiz</h2>
+              <p class="text-slate-400 text-sm mb-7" x-text="(quiz.topic||'Quiz')+' · '+(quiz.data?.questions?.length||quiz.answers.length)+' questions'"></p>
+
+              <!-- SVG donut -->
+              <div class="relative w-40 h-40 mx-auto mb-6">
+                <svg viewBox="0 0 144 144" class="w-40 h-40 -rotate-90">
+                  <circle cx="72" cy="72" r="60" stroke="#E2E8F0" stroke-width="13" fill="none"/>
+                  <circle cx="72" cy="72" r="60"
+                    :stroke="quiz.result?.pct>=80?'#10B981':quiz.result?.pct>=60?'#F59E0B':'#EF4444'"
+                    stroke-width="13" fill="none" stroke-linecap="round"
+                    :stroke-dasharray="376.99"
+                    :stroke-dashoffset="376.99*(1-(quiz.result?.pct||0)/100)"
+                    class="score-ring"/>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-4xl font-extrabold" :class="scoreColor(quiz.result?.pct||0)"
+                    x-text="(quiz.result?.pct||0)+'%'"></span>
+                  <span class="text-xs text-slate-400 mt-1"
+                    x-text="(quiz.result?.correct||0)+'/'+(quiz.result?.total||0)+' correct'"></span>
+                </div>
+              </div>
+
+              <!-- Stars -->
+              <div class="flex justify-center gap-1.5 mb-5">
+                <template x-for="i in [1,2,3,4,5]" :key="i">
+                  <i :class="i<=Math.round((quiz.result?.pct||0)/20)?'fas fa-star text-amber-400':'far fa-star text-slate-200'"
+                    class="text-xl"></i>
+                </template>
+              </div>
+
+              <!-- Badge -->
+              <div class="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold mb-7"
+                :class="quiz.result?.pct>=80?'bg-green-100 text-green-700':quiz.result?.pct>=60?'bg-amber-100 text-amber-700':'bg-red-100 text-red-700'">
+                <i :class="quiz.result?.pct>=80?'fas fa-trophy':quiz.result?.pct>=60?'fas fa-thumbs-up':'fas fa-redo'"></i>
+                <span x-text="quiz.result?.pct>=80?'Excellent !':quiz.result?.pct>=60?'Bien joué !':'À retravailler'"></span>
+              </div>
+
+              <div class="flex gap-3 justify-center">
+                <button @click="resetQuiz()"
+                  class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition flex items-center gap-2">
+                  <i class="fas fa-redo"></i> Nouveau quiz
+                </button>
+                <button @click="chatAboutResult()" x-show="quiz.result?.analysis"
+                  class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm transition flex items-center gap-2">
+                  <i class="fas fa-comments"></i> Discuter avec le tuteur
+                </button>
+              </div>
+            </div>
+
+            <!-- Weakness analysis -->
+            <div x-show="quiz.result?.analysis" class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+              <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-search text-indigo-500"></i> Analyse des lacunes
+              </h3>
+              <div class="text-sm text-slate-700 md-content" x-html="renderMd(quiz.result?.analysis?.analyse||'')"></div>
+              <template x-if="(quiz.result?.analysis?.plan_etude||[]).length>0">
+                <div class="mt-4 pt-4 border-t border-slate-100">
+                  <p class="text-sm font-bold text-slate-700 mb-3">Plan d'étude suggéré :</p>
+                  <div class="space-y-2">
+                    <template x-for="(s,i) in (quiz.result?.analysis?.plan_etude||[])" :key="i">
+                      <div class="flex items-start gap-2.5 text-sm text-slate-600">
+                        <span class="w-5 h-5 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5" x-text="i+1"></span>
+                        <span x-text="s"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Q&A review -->
+            <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+              <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-list-check text-indigo-500"></i> Révision des réponses
+              </h3>
+              <div class="space-y-3">
+                <template x-for="(a,i) in quiz.answers" :key="i">
+                  <div class="border rounded-xl p-4"
+                    :class="a.is_correct?'border-green-200 bg-green-50':'border-red-200 bg-red-50'">
+                    <div class="flex items-start gap-2">
+                      <i :class="a.is_correct?'fas fa-check-circle text-green-600':'fas fa-times-circle text-red-600'" class="mt-0.5 flex-shrink-0"></i>
+                      <div class="flex-1">
+                        <p class="text-sm font-semibold text-slate-800" x-text="a.question"></p>
+                        <div class="mt-2 text-xs space-y-1">
+                          <p><span class="text-slate-500">Votre réponse : </span>
+                            <span :class="a.is_correct?'text-green-700 font-medium':'text-red-700 font-medium'" x-text="a.student_answer"></span>
+                          </p>
+                          <p x-show="!a.is_correct">
+                            <span class="text-slate-500">Bonne réponse : </span>
+                            <span class="text-green-700 font-medium" x-text="a.correct_answer"></span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <!-- ====== END QUIZ ====== -->
+
+
+        <!-- ====== COURSES ====== -->
+        <div x-show="view==='courses'" class="h-full overflow-y-auto p-6 space-y-6">
+
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-2xl font-bold text-slate-800">Bibliothèque</h2>
+              <p class="text-sm text-slate-400" x-text="courses.length+' cours indexés'"></p>
+            </div>
+            <button @click="modal='upload'"
+              class="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition shadow-sm">
+              <i class="fas fa-upload"></i> Ajouter un cours
+            </button>
+          </div>
+
+          <!-- Empty -->
+          <div x-show="courses.length===0" class="flex flex-col items-center justify-center py-20 text-center">
+            <div class="w-24 h-24 bg-slate-100 rounded-3xl flex items-center justify-center mb-5">
+              <i class="fas fa-book-open text-slate-300 text-4xl"></i>
+            </div>
+            <h3 class="font-bold text-slate-700 text-lg mb-2">Aucun cours</h3>
+            <p class="text-sm text-slate-400 mb-5 max-w-xs">Téléchargez vos PDF de cours pour les indexer dans la base vectorielle</p>
+            <button @click="modal='upload'"
+              class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition">
+              <i class="fas fa-upload mr-2"></i> Télécharger un cours
+            </button>
+          </div>
+
+          <!-- Grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <template x-for="c in courses" :key="c.id">
+              <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm card-hover group">
+                <div class="flex items-start justify-between mb-4">
+                  <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-file-pdf text-indigo-600 text-xl"></i>
+                  </div>
+                  <button @click="deleteCourse(c.id)"
+                    class="opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition flex items-center justify-center">
+                    <i class="fas fa-trash text-sm"></i>
+                  </button>
+                </div>
+
+                <h3 class="font-bold text-slate-800 mb-1 line-clamp-2" x-text="c.title"></h3>
+                <p class="text-xs text-slate-400 mb-1" x-text="c.filiere"></p>
+                <p class="text-xs text-indigo-500 font-medium mb-4" x-text="c.num_chunks+' passages indexés'"></p>
+
+                <div class="flex gap-2">
+                  <button @click="toChat(c.id)"
+                    class="flex-1 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition flex items-center justify-center gap-1.5">
+                    <i class="fas fa-comments"></i> Chat
+                  </button>
+                  <button @click="toQuiz(c.id)"
+                    class="flex-1 py-2 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition flex items-center justify-center gap-1.5">
+                    <i class="fas fa-clipboard-check"></i> Quiz
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+        </div>
+        <!-- ====== END COURSES ====== -->
+
+
+        <!-- ====== PROGRESS ====== -->
+        <div x-show="view==='progress'" class="h-full overflow-y-auto p-6 space-y-6">
+
+          <div>
+            <h2 class="text-2xl font-bold text-slate-800">Progression</h2>
+            <p class="text-sm text-slate-400">Analyse détaillée de vos performances</p>
+          </div>
+
+          <!-- Top stats -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="rounded-xl p-6 text-white shadow-lg" style="background: linear-gradient(135deg,#4F46E5,#7C3AED);">
+              <p class="text-indigo-200 text-xs font-bold uppercase tracking-wider mb-2">Score Global</p>
+              <p class="text-5xl font-extrabold" x-text="(progress?.stats?.score_global??0)+'%'"></p>
+              <p class="text-indigo-200 text-sm mt-2"
+                x-text="(progress?.stats?.correct_answers??0)+' / '+(progress?.stats?.total_questions??0)+' correctes'"></p>
+            </div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Questions totales</p>
+              <p class="text-5xl font-extrabold text-slate-800" x-text="progress?.stats?.total_questions??0"></p>
+              <p class="text-slate-400 text-sm mt-2">Toutes sessions confondues</p>
+            </div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Points faibles</p>
+              <p class="text-5xl font-extrabold text-red-500" x-text="progress?.weaknesses?.length??0"></p>
+              <p class="text-slate-400 text-sm mt-2">Concepts à retravailler</p>
+            </div>
+          </div>
+
+          <!-- Detailed progress -->
+          <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <h3 class="font-bold text-slate-800 mb-5 flex items-center gap-2">
+              <i class="fas fa-chart-bar text-indigo-500"></i> Progression détaillée par cours
+            </h3>
+            <div x-show="!progress?.progress||progress.progress.length===0" class="text-center py-8 text-slate-400 text-sm">
+              <i class="fas fa-chart-bar text-3xl text-slate-200 mb-3 block"></i>
+              Commencez des quiz pour voir votre progression
+            </div>
+            <div class="space-y-6">
+              <template x-for="c in (progress?.progress||[])" :key="c.id">
+                <div class="flex items-center gap-4">
+                  <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-book text-indigo-600 text-sm"></i>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1.5">
+                      <span class="text-sm font-semibold text-slate-700 truncate" x-text="c.title"></span>
+                      <div class="flex items-center gap-4 flex-shrink-0 ml-3">
+                        <span class="text-xs text-slate-400" x-text="c.attempts+' essais'"></span>
+                        <span class="text-sm font-extrabold" :class="scoreColor(c.score_pct)" x-text="c.score_pct+'%'"></span>
+                      </div>
+                    </div>
+                    <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-700"
+                        :class="c.score_pct>=80?'bg-green-500':c.score_pct>=60?'bg-amber-400':c.score_pct>0?'bg-indigo-500':'bg-slate-200'"
+                        :style="'width:'+Math.max(2,c.score_pct)+'%'"></div>
+                    </div>
+                    <div class="flex items-center gap-4 mt-1.5">
+                      <span class="text-xs text-slate-400" x-text="(c.weakness_count||0)+' lacunes'"></span>
+                      <span x-show="c.last_score!==null" class="text-xs text-slate-400">
+                        Dernier : <span :class="scoreColor(c.last_score)" x-text="c.last_score+'%'"></span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Weaknesses -->
+          <div x-show="(progress?.weaknesses||[]).length>0" class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <i class="fas fa-exclamation-triangle text-amber-500"></i> Concepts à retravailler
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <template x-for="(w,i) in (progress?.weaknesses||[]).slice(0,8)" :key="i">
+                <div class="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div class="w-9 h-9 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span class="text-sm font-extrabold text-amber-700" x-text="w.fail_count"></span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-semibold text-slate-800 truncate" x-text="w.concept"></p>
+                    <p class="text-xs text-amber-600" x-text="w.fail_count+' erreur(s)'"></p>
+                  </div>
+                  <button @click="toQuizConcept(w)"
+                    class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition flex-shrink-0">
+                    Revoir
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+        <!-- ====== END PROGRESS ====== -->
+
+      </main>
+    </div>
+  </div>
+</template>
+
+
+<!-- ===================== UPLOAD MODAL ===================== -->
+<template x-if="modal==='upload'">
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.outside="modal=null">
+
+      <div class="flex items-center justify-between px-6 py-5 border-b border-slate-200">
+        <h2 class="font-extrabold text-slate-800 text-lg">Télécharger un cours</h2>
+        <button @click="modal=null" class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-5">
+        <!-- Drop zone -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">Fichier (PDF / DOCX / TXT)</label>
+          <div class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition"
+            :class="upload.file ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'"
+            @click="$refs.fileInput.click()"
+            @dragover.prevent
+            @drop.prevent="dropFile($event)">
+            <template x-if="!upload.file">
+              <div>
+                <i class="fas fa-cloud-upload-alt text-slate-300 text-3xl mb-2"></i>
+                <p class="text-sm text-slate-500 font-medium">Cliquez ou glissez un fichier ici</p>
+                <p class="text-xs text-slate-400 mt-1">PDF, DOCX, TXT (max 50 MB)</p>
+              </div>
+            </template>
+            <template x-if="upload.file">
+              <div class="flex items-center gap-3 justify-center">
+                <i class="fas fa-file-pdf text-indigo-600 text-2xl"></i>
+                <div class="text-left">
+                  <p class="text-sm font-semibold text-slate-700" x-text="upload.file.name"></p>
+                  <p class="text-xs text-slate-400" x-text="fmtSize(upload.file.size)"></p>
+                </div>
+                <button @click.stop="upload.file=null" class="ml-2 text-slate-400 hover:text-red-500 transition">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+          <input type="file" x-ref="fileInput" @change="pickFile($event)" accept=".pdf,.docx,.doc,.txt" class="hidden" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">Titre du cours</label>
+          <input type="text" x-model="upload.title" placeholder="Ex: Big Data — Chapitre 1"
+            class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">Filière</label>
+          <select x-model="upload.filiere"
+            class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+            <option>IA Distribuée</option>
+            <option>Big Data</option>
+            <option>Machine Learning</option>
+            <option>Réseaux & Cloud</option>
+            <option>Développement</option>
+            <option>Autre</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex gap-3 px-6 pb-6">
+        <button @click="modal=null"
+          class="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">
+          Annuler
+        </button>
+        <button @click="doUpload()"
+          class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"
+          :disabled="!upload.file||!upload.title.trim()||upload.loading">
+          <i x-show="!upload.loading" class="fas fa-upload"></i>
+          <i x-show="upload.loading" class="fas fa-spinner fa-spin"></i>
+          <span x-text="upload.loading?'Indexation...':'Télécharger'"></span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+<!-- ===================== APP SCRIPT ===================== -->
+<script src="/static/app.js"></script>
+
+</body>
+</html>

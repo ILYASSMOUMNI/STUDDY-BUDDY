@@ -1,9 +1,20 @@
 # StudyBuddy — Tuteur IA Personnalisé
 
-Système Multi-Agents (SMA) de tutorat intelligent basé sur RAG, construit avec Streamlit, ChromaDB et OpenRouter.  
-Uploadez vos cours, chattez avec le tuteur IA, passez des quiz adaptatifs, et suivez vos lacunes.
+Système Multi-Agents (SMA) de tutorat intelligent basé sur RAG.
+Uploadez vos cours, chattez avec le tuteur IA, passez des quiz adaptatifs et suivez vos lacunes.
 
 > Projet IA Distribuée — EMSI Maroc
+
+---
+
+## Versions disponibles
+
+| Version | Interface | Commande de lancement | Port |
+|---------|-----------|----------------------|------|
+| **v2** (recommandée) | FastAPI + SPA (Alpine.js + Tailwind) | `python server.py` | 8000 |
+| v1 (legacy) | Streamlit | `streamlit run app.py` | 8501 |
+
+Les deux versions partagent exactement le même backend (`backend/`), la même base SQLite et le même index ChromaDB.
 
 ---
 
@@ -31,9 +42,14 @@ Uploadez vos cours, chattez avec le tuteur IA, passez des quiz adaptatifs, et su
 
 ```
 studybuddy/
-├── app.py                        ← Entrypoint Streamlit + router de pages
+├── server.py                     ← Entrypoint v2 — FastAPI REST API (14 routes)
+├── app.py                        ← Entrypoint v1 — Streamlit (legacy)
 ├── .env                          ← Clés API + chemins + config email
 ├── requirements.txt
+│
+├── static/                       ← Frontend v2 (SPA, aucun build requis)
+│   ├── index.html                ← Shell HTML + CDN (Tailwind, Alpine.js, marked.js)
+│   └── app.js                    ← Logique Alpine.js : login, dashboard, chat, quiz...
 │
 ├── backend/
 │   ├── agents/                   ← Système Multi-Agents (Couche 2)
@@ -51,22 +67,18 @@ studybuddy/
 │   ├── vector_store.py           ← ChromaDB + embeddings multilingues (thread-safe)
 │   └── ai_tutor.py               ← Façade publique → délègue à l'orchestrateur
 │
-├── frontend/
-│   ├── design_system.py          ← Thème CSS + composants réutilisables
-│   ├── i18n.py                   ← Internationalisation FR / EN
-│   ├── page_login.py             ← Connexion / création de compte
-│   ├── page_home.py              ← Tableau de bord : KPIs + progression
-│   ├── page_courses.py           ← Upload, indexation, gestion des cours
-│   ├── page_chat.py              ← Chat pédagogique avec rendu Markdown
-│   ├── page_quiz.py              ← Quiz adaptatif QCM + HITL + email rapport
-│   └── page_dashboard.py         ← Analytics : courbes, lacunes, plan d'étude IA
+├── frontend/                     ← Pages Streamlit v1 (legacy)
+│   ├── design_system.py
+│   ├── i18n.py
+│   ├── page_login.py
+│   ├── page_home.py
+│   ├── page_courses.py
+│   ├── page_chat.py
+│   ├── page_quiz.py
+│   └── page_dashboard.py
 │
 └── data/
-    ├── courses/                  ← Fichiers uploadés + cours exemples (.txt)
-    │   ├── machine_learning_fondamentaux.txt
-    │   ├── deep_learning_reseaux_neurones.txt
-    │   ├── nlp_et_grands_modeles_de_langage.txt
-    │   └── big_data_hadoop_spark.txt
+    ├── courses/                  ← Fichiers uploadés
     ├── vectorstore/              ← Index ChromaDB persistant (auto-créé)
     └── studybuddy.db             ← Base SQLite (auto-créée)
 ```
@@ -75,33 +87,71 @@ studybuddy/
 
 ## Démarrage rapide
 
-```bash
-# 1. Environnement virtuel
-python -m venv venv
-source venv/bin/activate          # Windows : venv\Scripts\activate
-pip install -r requirements.txt
+### Prérequis
 
-# 2. Configurer .env
-OPENROUTER_API_KEY=sk-or-...      # https://openrouter.ai/keys
+```bash
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# macOS / Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### Configurer `.env`
+
+```env
+OPENROUTER_API_KEY=sk-or-...
 OPENROUTER_MODEL=mistralai/mistral-7b-instruct
 FALLBACK_MODEL=google/gemma-2-9b-it:free
 FILIERE=IA & Data Science
 
-# 3. Lancer
+# Optionnel — rapports email
+GMAIL_USER=votre@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+```
+
+Obtenez votre clé API sur [openrouter.ai/keys](https://openrouter.ai/keys).
+
+### Lancer v2 (recommandé)
+
+```bash
+python server.py
+# ou
+uvicorn server:app --reload --port 8000
+```
+
+Ouvrir **http://localhost:8000**
+
+### Lancer v1 (Streamlit)
+
+```bash
 streamlit run app.py
 ```
 
 Ouvrir **http://localhost:8501**
 
-> Au premier lancement, les 4 cours exemples (ML, Deep Learning, NLP, Big Data) sont automatiquement indexés dans ChromaDB. Le RAG fonctionne immédiatement sans upload manuel.
+> Au premier lancement, les cours exemples sont automatiquement indexés dans ChromaDB. Le RAG fonctionne immédiatement sans upload manuel.
+
+---
+
+## Fonctionnalités v2 (FastAPI + SPA)
+
+| Vue | Description |
+|-----|-------------|
+| **Login** | Connexion/création de compte, session persistante (localStorage) |
+| **Tableau de bord** | KPIs, progression par cours, activité récente, recommandations personnalisées |
+| **Tuteur IA** | Chat avec markdown, 5 modes de réponse, sélection du cours ou base complète |
+| **Quiz** | Génération IA, QCM interactif, feedback instantané, analyse des lacunes |
+| **Bibliothèque** | Upload PDF/DOCX/TXT par glisser-déposer, indexation vectorielle automatique |
+| **Progression** | Statistiques détaillées, score par cours, concepts à retravailler |
 
 ---
 
 ## Fonctionnement Détaillé
 
 ### Couche 1 — Orchestration (AgentOrchestrator)
-
-L'orchestrateur centralise tous les appels IA et gère la résilience :
 
 ```
 Requête utilisateur
@@ -115,19 +165,19 @@ Requête utilisateur
 ### Couche 2 — Agents Cognitifs
 
 **Agent 1 — TutorAgent** (`tutor_agent.py`)
+
 - System prompt pédagogique spécialisé (EMSI, filière IA & Data Science)
-- Réponses en 4 modes : défaut, pas-à-pas, exemple concret, résumé
-- Gestion automatique de la fenêtre de contexte :
-  - Si > 10 messages → résumé automatique des anciens échanges via LLM
-  - Conserve les 4 derniers messages intacts
+- Réponses en 5 modes : défaut, explication, pas-à-pas, exemple concret, résumé
+- Gestion automatique de la fenêtre de contexte (résumé auto si > 10 messages)
 
 **Agent 2 — AssessmentAgent** (`assessment_agent.py`)
+
 - Génère des QCM basés strictement sur le contenu du cours (RAG)
-- **Self-Correction Loop** : si le JSON généré est invalide, demande au LLM de se corriger (max 3 tentatives avec feedback d'erreur précis)
-- Utilise le modèle de fallback à la 3ème tentative
+- **Self-Correction Loop** : si le JSON est invalide, demande au LLM de se corriger (max 3 tentatives)
 - Évalue aussi les réponses ouvertes avec feedback constructif
 
 **Agent 3 — AnalysisAgent** (`analysis_agent.py`)
+
 - Identifie les lacunes conceptuelles à partir des erreurs de quiz
 - Génère un plan d'étude personnalisé (sessions avec durée, activité, priorité)
 - Produit un rapport de progression textuel (FR/EN)
@@ -153,41 +203,40 @@ Requête étudiant
 **MCP Server** (`mcp_server.py`)
 - Implémentation du Model Context Protocol (abstraction unifiée)
 - 6 outils enregistrés : `get_student_profile`, `search_knowledge`, `save_quiz_result`, `list_courses`, `get_course_progress`, `read_local_file`
-- Chaque appel est logué (timestamp, outil, succès/échec)
-- Interprétation du retour d'action → chemin de repli si erreur
 
 **Gmail SMTP** (`email_service.py`)
 - Rapport de quiz HTML (score, verdict, concepts à revoir)
 - Résumé hebdomadaire de progression
-- Déclenché depuis la page quiz ou le dashboard
 
 **Human-in-the-Loop (HITL)**
 - Confirmation obligatoire avant soumission du quiz
-- L'étudiant voit le nombre de réponses données et valide manuellement
-- Évite les soumissions accidentelles qui impactent le profil d'apprentissage
 
 **Boucle d'observation & Fallback**
 - Retry exponentiel sur chaque appel LLM (2s → 4s → 8s)
 - Basculement automatique vers `FALLBACK_MODEL` si le modèle principal échoue
-- Messages d'erreur gracieux affichés à l'utilisateur en cas d'indisponibilité
 
 ---
 
-## Configuration Gmail (optionnel)
+## API REST (v2)
 
-Pour activer les rapports email, ajoutez dans `.env` :
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| POST | `/api/auth/login` | Connexion / création de compte |
+| GET | `/api/courses` | Liste des cours indexés |
+| POST | `/api/courses` | Upload + indexation d'un cours |
+| DELETE | `/api/courses/{id}` | Suppression cours + index |
+| POST | `/api/chat` | Message au tuteur IA |
+| GET | `/api/chat/history/{student_id}` | Historique de conversation |
+| POST | `/api/quiz/generate` | Génération de quiz QCM |
+| POST | `/api/quiz/submit` | Soumission + analyse des résultats |
+| GET | `/api/dashboard/{student_id}` | Données tableau de bord |
+| GET | `/api/progress/{student_id}` | Progression détaillée |
 
-```env
-GMAIL_USER=votre@gmail.com
-GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
-```
-
-Créez un mot de passe d'application sur :  
-**myaccount.google.com → Sécurité → Mots de passe des applications**
+Documentation interactive : **http://localhost:8000/api/docs**
 
 ---
 
-## Modèles LLM supportés
+## Modèles LLM supportés (via OpenRouter)
 
 | Modèle | Type | Usage recommandé |
 |--------|------|-----------------|
@@ -202,19 +251,19 @@ Créez un mot de passe d'application sur :
 
 | Bibliothèque | Rôle |
 |---|---|
+| `fastapi` + `uvicorn` | Serveur API v2 |
 | `openai` | Client OpenRouter (compatible OpenAI) |
-| `streamlit` | Interface web |
+| `streamlit` | Interface web v1 (legacy) |
 | `chromadb` | Base vectorielle locale persistante |
 | `sentence-transformers` | Embeddings multilingues |
 | `pdfplumber` | Extraction texte PDF |
 | `python-docx` | Extraction texte DOCX |
-| `plotly` | Graphiques de progression |
 
 ---
 
-## Notes
+## Notes techniques
 
 - Le modèle d'embeddings (~120 MB) se télécharge au premier lancement puis est mis en cache.
-- Le singleton d'embeddings est thread-safe (double-checked locking) pour éviter le rechargement entre les reruns Streamlit.
+- Le singleton d'embeddings est thread-safe (double-checked locking).
 - La base SQLite utilise le mode WAL pour les accès concurrents.
-- Les cours exemples sont auto-indexés uniquement si la base est vide.
+- La v2 ne nécessite aucun build frontend — tout est servi depuis `static/` via CDN.
