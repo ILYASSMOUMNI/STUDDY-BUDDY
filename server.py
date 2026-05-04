@@ -61,6 +61,10 @@ class QuizSubmitBody(BaseModel):
     answers: List[dict]
     lang: str = "fr"
 
+class CreateCourseBody(BaseModel):
+    title: str
+    filiere: str = "IA Distribuée"
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/auth/login")
@@ -76,63 +80,96 @@ def login(body: LoginBody):
 
 @app.get("/api/courses")
 def list_courses():
-    from backend.database import get_all_courses
-    return get_all_courses()
+    from backend.database import get_all_courses_with_files
+    return get_all_courses_with_files()
 
 @app.post("/api/courses")
-async def upload_course(
-    file: UploadFile = File(...),
-    title: str = Form(...),
-    filiere: str = Form(default="IA Distribuée"),
-):
-    from backend.database import save_course
-    from backend.course_parser import parse_course_file
-    from backend.vector_store import index_course
+def create_course_endpoint(body: CreateCourseBody):
+    from backend.database import create_course
+    course_id = create_course(body.title, body.filiere)
+    return {"ok": True, "course_id": course_id}
 
-    upload_dir = Path("./data/courses")
+@app.post("/api/courses/{course_id}/files")
+async def add_file_to_course(course_id: int, file: UploadFile = File(...)):
+    from backend.database import add_course_file, get_course_by_id
+    from backend.course_parser import parse_course_file
+    from backend.vector_store import add_file_chunks
+
+    course = get_course_by_id(course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Cours introuvable")
+
+    upload_dir = Path(f"./data/courses/{course_id}")
     upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = upload_dir / file.filename
+
+    # Use unique filename to avoid conflicts
+    safe_name = f"{course_id}_{file.filename}"
+    dest = upload_dir / safe_name
     dest.write_bytes(await file.read())
 
     try:
         parsed = await asyncio.to_thread(parse_course_file, str(dest))
         chunks = parsed["chunks"]
-        course_id = await asyncio.to_thread(save_course, title, file.filename, filiere, len(chunks))
-        await asyncio.to_thread(index_course, course_id, chunks)
-        return {"ok": True, "course_id": course_id, "chunks": len(chunks)}
+        file_id = await asyncio.to_thread(
+            add_course_file, course_id, safe_name, file.filename, len(chunks)
+        )
+        await asyncio.to_thread(add_file_chunks, course_id, file_id, chunks)
+        return {"ok": True, "file_id": file_id, "chunks": len(chunks), "original_name": file.filename}
     except Exception as e:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/courses/{course_id}/files/{file_id}")
+def delete_file_endpoint(course_id: int, file_id: int):
+    from backend.database import delete_course_file
+    from backend.vector_store import remove_file_chunks
+    f = delete_course_file(file_id)
+    if not f:
+        raise HTTPException(status_code=404, detail="Fichier introuvable")
+    remove_file_chunks(course_id, file_id)
+    # Remove physical file
+    dest = Path(f"./data/courses/{course_id}/{f['filename']}")
+    dest.unlink(missing_ok=True)
+    return {"ok": True}
+
 @app.delete("/api/courses/{course_id}")
-def delete_course(course_id: int):
-    from backend.database import get_connection
+def delete_course_endpoint(course_id: int):
+    from backend.database import delete_course, get_course_files, delete_course_file
     from backend.vector_store import delete_course_index
+    # Delete all files first
+    for f in get_course_files(course_id):
+        delete_course_file(f["id"])
+        dest = Path(f"./data/courses/{course_id}/{f['filename']}")
+        dest.unlink(missing_ok=True)
     delete_course_index(course_id)
-    conn = get_connection()
-    conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
-    conn.commit()
-    conn.close()
+    delete_course(course_id)
     return {"ok": True}
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/chat")
-def chat(body: ChatBody):
+async def chat(body: ChatBody):
     from backend.ai_tutor import chat_with_tutor
     from backend.database import save_chat_session
-    reply = chat_with_tutor(
-        messages=body.messages,
-        course_id=body.course_id,
-        user_message=body.message,
-        response_mode=body.mode,
-        language=body.lang,
-    )
+    try:
+        reply = await asyncio.to_thread(
+            chat_with_tutor,
+            messages=body.messages,
+            course_id=body.course_id,
+            user_message=body.message,
+            response_mode=body.mode,
+            language=body.lang,
+        )
+    except Exception as e:
+        reply = f"⚠️ Erreur interne : {e}"
     new_msgs = body.messages + [
         {"role": "user", "content": body.message},
         {"role": "assistant", "content": reply},
     ]
-    save_chat_session(body.student_id, body.course_id, new_msgs)
+    try:
+        await asyncio.to_thread(save_chat_session, body.student_id, body.course_id, new_msgs)
+    except Exception as e:
+        print(f"[Chat] Avertissement sauvegarde session : {e}")
     return {"reply": reply, "messages": new_msgs}
 
 @app.get("/api/chat/history/{student_id}")
@@ -144,9 +181,10 @@ def chat_history(student_id: int, course_id: Optional[int] = None):
 # ── Quiz ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/quiz/generate")
-def quiz_generate(body: QuizGenBody):
+async def quiz_generate(body: QuizGenBody):
     from backend.ai_tutor import generate_quiz
-    return generate_quiz(
+    return await asyncio.to_thread(
+        generate_quiz,
         course_id=body.course_id,
         topic=body.topic,
         num_questions=body.num_questions,
@@ -155,12 +193,13 @@ def quiz_generate(body: QuizGenBody):
     )
 
 @app.post("/api/quiz/submit")
-def quiz_submit(body: QuizSubmitBody):
+async def quiz_submit(body: QuizSubmitBody):
     from backend.database import save_quiz_result
     from backend.ai_tutor import analyze_weaknesses
     wrong = []
     for a in body.answers:
-        save_quiz_result(
+        await asyncio.to_thread(
+            save_quiz_result,
             body.student_id, body.course_id,
             a["concept"], a["question"],
             a["student_answer"], a["correct_answer"],
@@ -170,7 +209,7 @@ def quiz_submit(body: QuizSubmitBody):
             wrong.append(a)
     total = len(body.answers)
     correct = sum(1 for a in body.answers if a["is_correct"])
-    analysis = analyze_weaknesses(wrong, body.course_id, body.lang) if wrong else None
+    analysis = await asyncio.to_thread(analyze_weaknesses, wrong, body.course_id, body.lang) if wrong else None
     return {
         "correct": correct,
         "total": total,

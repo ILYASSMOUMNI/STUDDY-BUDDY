@@ -58,7 +58,7 @@ class TutorAgent:
     Gère la compression de l'historique pour respecter la fenêtre de contexte.
     """
 
-    MAX_HISTORY = 10  # messages avant compression
+    MAX_HISTORY = 10  # messages avant troncature
 
     def __init__(self, client, model: str):
         self.client = client
@@ -67,38 +67,19 @@ class TutorAgent:
 
     # ── Gestion mémoire ────────────────────────────────────────────────────
 
-    def _summarize_history(self, messages: List[Dict]) -> str:
-        """Résume les anciens messages pour libérer la fenêtre de contexte."""
-        history_text = "\n".join(
-            f"{m['role'].upper()}: {m['content'][:300]}"
-            for m in messages
-        )
-        try:
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=300,
-                messages=[
-                    {"role": "system", "content": _SUMMARY_PROMPT},
-                    {"role": "user", "content": f"Échanges à résumer :\n{history_text}"},
-                ],
-                temperature=0.3,
-            )
-            return resp.choices[0].message.content.strip()
-        except Exception:
-            return "Historique de conversation précédente (résumé non disponible)."
+    _MAX_MSG_WORDS = 80  # tronque chaque message de l'historique à 80 mots max
 
     def _compress_history(self, messages: List[Dict]) -> List[Dict]:
-        """Compresse l'historique si > MAX_HISTORY messages (évite l'explosion de tokens)."""
-        if len(messages) <= self.MAX_HISTORY:
-            return messages
-
-        # Résumer tout sauf les 4 derniers échanges
-        to_summarize = messages[:-4]
-        summary = self._summarize_history(to_summarize)
-        compressed = [
-            {"role": "system", "content": f"[Résumé des échanges précédents]\n{summary}"},
-        ] + messages[-4:]
-        return compressed
+        """Tronque l'historique à 6 messages max et coupe les longs contenus."""
+        recent = messages[-6:] if len(messages) > self.MAX_HISTORY else messages
+        result = []
+        for m in recent:
+            words = str(m.get("content", "")).split()
+            content = " ".join(words[:self._MAX_MSG_WORDS])
+            if len(words) > self._MAX_MSG_WORDS:
+                content += "…"
+            result.append({"role": m["role"], "content": content})
+        return result
 
     # ── Construction du prompt système ────────────────────────────────────
 
@@ -144,8 +125,11 @@ class TutorAgent:
 
         resp = self.client.chat.completions.create(
             model=self.model,
-            max_tokens=1500,
+            max_tokens=800,
             messages=[{"role": "system", "content": system}] + final_messages,
             temperature=0.7,
         )
-        return resp.choices[0].message.content
+        content = resp.choices[0].message.content
+        if not content:
+            raise RuntimeError("Réponse vide reçue du modèle IA.")
+        return content

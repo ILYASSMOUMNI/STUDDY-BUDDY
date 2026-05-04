@@ -48,8 +48,8 @@ class AnalysisAgent:
 
     # ── Utilitaires ────────────────────────────────────────────────────────
 
-    def _call(self, system: str, user_content: str, max_tokens: int = 900) -> str:
-        resp = self.client.chat.completions.create(
+    def _call(self, system: str, user_content: str, max_tokens: int = 900, json_mode: bool = False) -> str:
+        kwargs: dict = dict(
             model=self.model,
             max_tokens=max_tokens,
             messages=[
@@ -58,6 +58,9 @@ class AnalysisAgent:
             ],
             temperature=0.4,
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = self.client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content
 
     def _parse_json(self, raw: str) -> dict:
@@ -102,7 +105,7 @@ class AnalysisAgent:
         )
 
         try:
-            raw = self._call(ANALYSIS_SYSTEM_PROMPT, prompt, max_tokens=1000)
+            raw = self._call(ANALYSIS_SYSTEM_PROMPT, prompt, max_tokens=1000, json_mode=True)
             return self._parse_json(raw)
         except Exception as e:
             print(f"[AnalysisAgent] analyze_weaknesses error: {e}")
@@ -144,7 +147,7 @@ class AnalysisAgent:
         )
 
         try:
-            raw = self._call(STUDY_PLAN_SYSTEM_PROMPT, prompt, max_tokens=900)
+            raw = self._call(STUDY_PLAN_SYSTEM_PROMPT, prompt, max_tokens=900, json_mode=True)
             return self._parse_json(raw)
         except Exception as e:
             print(f"[AnalysisAgent] generate_study_plan error: {e}")

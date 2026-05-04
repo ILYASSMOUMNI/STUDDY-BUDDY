@@ -5,7 +5,9 @@ Couche 1 (Orchestration) du système SMA StudyBuddy.
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import time
 from typing import Dict, List, Optional
 
@@ -18,9 +20,36 @@ from backend.agents.analysis_agent import AnalysisAgent
 
 load_dotenv()
 
-_PRIMARY_MODEL  = os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct")
-_FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemma-2-9b-it:free")
-_API_KEY        = os.getenv("OPENROUTER_API_KEY", "")
+# Lecture des variables — GEMINI_* en priorité, OPENROUTER_* en fallback
+_API_KEY        = os.getenv("GEMINI_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+_PRIMARY_MODEL  = os.getenv("GEMINI_MODEL") or os.getenv("OPENROUTER_MODEL", "gemini-2.0-flash")
+_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL") or os.getenv("FALLBACK_MODEL", "gemini-1.5-flash")
+
+# Détection automatique du provider selon la clé API
+# - Clé Gemini     : commence par "AIzaSy"  → endpoint Google Generative AI
+# - Clé OpenRouter : commence par "sk-or-v1-" → endpoint OpenRouter
+def _detect_provider() -> tuple[str, dict, bool]:
+    """Retourne (base_url, extra_headers, is_openrouter) selon le type de clé API."""
+    if _API_KEY.startswith("AIzaSy"):
+        return "https://generativelanguage.googleapis.com/v1beta/openai/", {}, False
+    return "https://openrouter.ai/api/v1", {
+        "HTTP-Referer": "https://studybuddy.emsi.ma",
+        "X-Title": "StudyBuddy EMSI",
+    }, True
+
+
+def _normalize_model(model: str, is_openrouter: bool) -> str:
+    """On OpenRouter, model IDs need a provider prefix (e.g. google/gemini-2.0-flash)."""
+    if not is_openrouter or "/" in model:
+        return model
+    name = model.lower()
+    if "gemini" in name:
+        return f"google/{model}"
+    if any(x in name for x in ("gpt-", "o1-", "o3-")):
+        return f"openai/{model}"
+    if "claude" in name:
+        return f"anthropic/{model}"
+    return model
 
 # ── Singletons ──────────────────────────────────────────────────────────────
 
@@ -31,13 +60,12 @@ _orchestrator: Optional["AgentOrchestrator"] = None
 def get_client() -> OpenAI:
     global _client
     if _client is None:
+        base_url, extra_headers, _ = _detect_provider()
         _client = OpenAI(
             api_key=_API_KEY,
-            base_url="https://openrouter.ai/api/v1",
-            default_headers={
-                "HTTP-Referer": "https://studybuddy.emsi.ma",
-                "X-Title": "StudyBuddy EMSI",
-            },
+            base_url=base_url,
+            default_headers=extra_headers,
+            timeout=60.0,
         )
     return _client
 
@@ -51,6 +79,15 @@ def get_orchestrator() -> "AgentOrchestrator":
 
 # ── Orchestrateur ────────────────────────────────────────────────────────────
 
+_RESPONSE_CACHE: Dict[str, str] = {}
+_RAG_CACHE: Dict[str, str] = {}
+_CACHE_MAX_SIZE = 50
+
+
+def _cache_key(*parts) -> str:
+    return hashlib.md5("|".join(str(p) for p in parts).encode()).hexdigest()
+
+
 class AgentOrchestrator:
     """
     Orchestrateur principal du SMA StudyBuddy.
@@ -62,15 +99,18 @@ class AgentOrchestrator:
     - Surveiller la fenêtre de contexte et déclencher la compression mémoire
     """
 
-    MAX_RETRIES = 3
-    BASE_DELAY  = 2  # secondes (exponentiel : 2, 4, 8)
+    MAX_RETRIES = 1  # 0 retry — fail fast, quota épuisé = inutile de réessayer
+    BASE_DELAY  = 2
 
     def __init__(self):
         client = get_client()
-        self.tutor    = TutorAgent(client, _PRIMARY_MODEL)
-        self.assessor = AssessmentAgent(client, _PRIMARY_MODEL, _FALLBACK_MODEL)
-        self.analyzer = AnalysisAgent(client, _PRIMARY_MODEL)
-        print(f"[Orchestrator] ✅ Initialisé — modèle: {_PRIMARY_MODEL} / fallback: {_FALLBACK_MODEL}")
+        _, _, is_openrouter = _detect_provider()
+        primary  = _normalize_model(_PRIMARY_MODEL, is_openrouter)
+        fallback = _normalize_model(_FALLBACK_MODEL, is_openrouter)
+        self.tutor    = TutorAgent(client, primary)
+        self.assessor = AssessmentAgent(client, primary, fallback)
+        self.analyzer = AnalysisAgent(client, primary)
+        print(f"[Orchestrator] Initialisé — modele: {primary} / fallback: {fallback}")
 
     # ── Contexte RAG (accès vectorstore via abstraction MCP) ───────────────
 
@@ -78,9 +118,13 @@ class AgentOrchestrator:
         self,
         course_id: Optional[int],
         query: str,
-        top_k: int = 5,
+        top_k: int = 3,
     ) -> str:
-        """Construit le contexte RAG en interrogeant la base vectorielle."""
+        """Construit le contexte RAG en interrogeant la base vectorielle (avec cache)."""
+        key = _cache_key(course_id, query, top_k)
+        if key in _RAG_CACHE:
+            return _RAG_CACHE[key]
+
         try:
             from backend.vector_store import search, search_all_courses
 
@@ -94,37 +138,59 @@ class AgentOrchestrator:
 
             relevant = [c for c in chunks if c.get("distance", 1.0) < 0.85]
             if not relevant:
-                relevant = chunks[:3]
+                relevant = chunks[:2]
 
             parts = ["=== CONTEXTE DU COURS ===\n"]
             for i, chunk in enumerate(relevant, 1):
-                parts.append(f"[Extrait {i}]\n{chunk['text']}\n")
+                # Tronquer à 150 mots max par chunk pour limiter les tokens
+                words = chunk['text'].split()
+                text = " ".join(words[:150])
+                parts.append(f"[Extrait {i}]\n{text}\n")
             parts.append("========================\n")
-            return "\n".join(parts)
+            result = "\n".join(parts)
+
+            if len(_RAG_CACHE) >= _CACHE_MAX_SIZE:
+                _RAG_CACHE.pop(next(iter(_RAG_CACHE)))
+            _RAG_CACHE[key] = result
+            return result
 
         except Exception as e:
             print(f"[Orchestrator] Erreur RAG : {e}")
             return ""
 
+    # ── Gestion du fallback de modèle ─────────────────────────────────────
+
+    def _activate_fallback(self):
+        """Bascule tous les agents sur le modèle de secours."""
+        _, _, is_openrouter = _detect_provider()
+        fallback = _normalize_model(_FALLBACK_MODEL, is_openrouter)
+        self.tutor.model    = fallback
+        self.assessor.model = fallback
+        self.analyzer.model = fallback
+        print(f"[Orchestrator] Bascule sur le modele de secours : {fallback}")
+
     # ── Wrapper retry + fallback ───────────────────────────────────────────
 
     def _with_retry(self, fn, *args, **kwargs):
         """
-        Exécute fn avec retry exponentiel.
-        Boucle d'observation & Fallback : interprète le retour d'action (succès/échec).
+        Stratégie : essai unique sur le modèle principal.
+        Sur 429 : bascule sur fallback et retente une seule fois.
+        Sur tout autre erreur ou si fallback aussi épuisé : échec immédiat.
         """
-        last_error = None
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                return fn(*args, **kwargs)
-            except Exception as e:
-                last_error = e
-                wait = self.BASE_DELAY * (2 ** attempt)
-                print(f"[Orchestrator] Tentative {attempt + 1}/{self.MAX_RETRIES} échouée ({e}), retry dans {wait}s")
-                if attempt < self.MAX_RETRIES - 1:
-                    time.sleep(wait)
-        # Chemin de repli : lever l'erreur pour que l'UI affiche un message gracieux
-        raise RuntimeError(f"Service IA indisponible après {self.MAX_RETRIES} tentatives : {last_error}")
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e)
+            is_quota = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+
+            if is_quota:
+                self._activate_fallback()
+                try:
+                    return fn(*args, **kwargs)
+                except Exception as e2:
+                    raise RuntimeError("QUOTA_EXCEEDED") from e2
+
+            raise RuntimeError(f"Service IA indisponible : {e}") from e
 
     # ── API publique : TutorAgent ──────────────────────────────────────────
 

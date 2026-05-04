@@ -264,7 +264,8 @@ def _send(msg: str, course_id: int):
     mode = st.session_state.get("chat_mode", "default")
     st.session_state.chat_display.append({"role": "user", "content": msg})
     st.session_state.chat_messages.append({"role": "user", "content": msg})
-    with st.spinner(""):
+    thinking = "StudyBuddy réfléchit…" if lang == "fr" else "StudyBuddy is thinking…"
+    with st.spinner(thinking):
         try:
             resp = chat_with_tutor(
                 messages=st.session_state.chat_messages[:-1],
@@ -275,6 +276,11 @@ def _send(msg: str, course_id: int):
             st.session_state.chat_display.append({"role": "assistant", "content": resp})
             st.session_state.chat_messages.append({"role": "assistant", "content": resp})
         except Exception as e:
-            st.session_state.chat_display.append(
-                {"role": "assistant", "content": t("chat.error", lang, error=str(e))})
+            err_msg = (
+                "⚠️ Quota API épuisé. Génère une nouvelle clé sur [Google AI Studio](https://aistudio.google.com/app/apikey) et redémarre."
+                if lang == "fr"
+                else "⚠️ API quota exhausted. Generate a new key at [Google AI Studio](https://aistudio.google.com/app/apikey) and restart."
+            ) if "QUOTA" in str(e).upper() or "429" in str(e) else t("chat.error", lang, error=str(e))
+            st.session_state.chat_display.append({"role": "assistant", "content": err_msg})
+            st.session_state.chat_messages.append({"role": "assistant", "content": err_msg})
     st.rerun()

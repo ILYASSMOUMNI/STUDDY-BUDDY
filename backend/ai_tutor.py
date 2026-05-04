@@ -30,12 +30,27 @@ def chat_with_tutor(
             language=language,
             response_mode=response_mode,
         )
-    except RuntimeError:
-        msg = (
-            "⚠️ Le service IA est temporairement indisponible. "
-            "Vérifiez votre connexion et réessayez dans quelques instants."
+    except RuntimeError as e:
+        err = str(e)
+        if "QUOTA_EXCEEDED" in err:
+            return (
+                "⚠️ **Quota Gemini épuisé** pour aujourd'hui.\n\n"
+                "Solutions :\n"
+                "1. Attendez la réinitialisation quotidienne (minuit heure Pacifique)\n"
+                "2. Générez une nouvelle clé API sur [Google AI Studio](https://aistudio.google.com/app/apikey)\n"
+                "3. Activez la facturation sur votre projet Google Cloud pour lever la limite"
+            ) if language == "fr" else (
+                "⚠️ **Gemini quota exhausted** for today.\n\n"
+                "Solutions:\n"
+                "1. Wait for daily reset (midnight Pacific time)\n"
+                "2. Generate a new API key at [Google AI Studio](https://aistudio.google.com/app/apikey)\n"
+                "3. Enable billing on your Google Cloud project to remove the limit"
+            )
+        return (
+            "⚠️ Le service IA est temporairement indisponible. Réessayez dans quelques instants."
+            if language == "fr"
+            else "⚠️ AI service temporarily unavailable. Please retry."
         )
-        return msg if language == "fr" else "⚠️ AI service temporarily unavailable. Please retry."
 
 
 # ── Génération de quiz ────────────────────────────────────────────────────────

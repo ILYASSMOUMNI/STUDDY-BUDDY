@@ -15,11 +15,12 @@ DB_PATH = os.getenv("DB_PATH", "./data/studybuddy.db")
 
 def get_connection():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 
@@ -90,6 +91,29 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS course_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            num_chunks INTEGER DEFAULT 0,
+            uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (course_id) REFERENCES courses(id)
+        )
+    """)
+
+    # Migrate existing courses that have a filename but no course_files entry
+    c.execute("PRAGMA table_info(courses)")
+    cols = [row[1] for row in c.fetchall()]
+    if 'filename' in cols:
+        c.execute("""
+            INSERT OR IGNORE INTO course_files (course_id, filename, original_name, num_chunks, uploaded_at)
+            SELECT id, filename, filename, num_chunks, uploaded_at FROM courses
+            WHERE filename IS NOT NULL AND filename != ''
+            AND id NOT IN (SELECT DISTINCT course_id FROM course_files)
+        """)
+
     conn.commit()
     conn.close()
 
@@ -138,6 +162,74 @@ def get_all_students():
     return [dict(r) for r in rows]
 
 
+def create_course(title: str, filiere: str) -> int:
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO courses (title, filename, filiere, num_chunks) VALUES (?, '', ?, 0)", (title, filiere))
+        conn.commit()
+        return c.lastrowid
+    finally:
+        conn.close()
+
+
+def add_course_file(course_id: int, filename: str, original_name: str, num_chunks: int) -> int:
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO course_files (course_id, filename, original_name, num_chunks) VALUES (?, ?, ?, ?)",
+            (course_id, filename, original_name, num_chunks),
+        )
+        file_id = c.lastrowid
+        c.execute("UPDATE courses SET num_chunks = num_chunks + ? WHERE id = ?", (num_chunks, course_id))
+        conn.commit()
+        return file_id
+    finally:
+        conn.close()
+
+
+def get_course_files(course_id: int):
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM course_files WHERE course_id = ? ORDER BY uploaded_at ASC", (course_id,))
+        return [dict(r) for r in c.fetchall()]
+    finally:
+        conn.close()
+
+
+def delete_course_file(file_id: int):
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM course_files WHERE id = ?", (file_id,))
+        f = c.fetchone()
+        if not f:
+            return None
+        f = dict(f)
+        c.execute("UPDATE courses SET num_chunks = MAX(0, num_chunks - ?) WHERE id = ?", (f["num_chunks"], f["course_id"]))
+        c.execute("DELETE FROM course_files WHERE id = ?", (file_id,))
+        conn.commit()
+        return f
+    finally:
+        conn.close()
+
+
+def get_all_courses_with_files():
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM courses ORDER BY uploaded_at DESC, id DESC")
+        courses = [dict(r) for r in c.fetchall()]
+        for course in courses:
+            c.execute("SELECT * FROM course_files WHERE course_id = ? ORDER BY uploaded_at ASC", (course["id"],))
+            course["files"] = [dict(f) for f in c.fetchall()]
+        return courses
+    finally:
+        conn.close()
+
+
 def save_course(title: str, filename: str, filiere: str, num_chunks: int) -> int:
     conn = get_connection()
     c = conn.cursor()
@@ -152,12 +244,20 @@ def save_course(title: str, filename: str, filiere: str, num_chunks: int) -> int
 
 
 def get_all_courses():
+    return get_all_courses_with_files()
+
+
+def delete_course(course_id: int):
     conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM courses ORDER BY uploaded_at DESC, id DESC")
-    rows = c.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        conn.execute("DELETE FROM weaknesses WHERE course_id = ?", (course_id,))
+        conn.execute("DELETE FROM quiz_results WHERE course_id = ?", (course_id,))
+        conn.execute("DELETE FROM chat_sessions WHERE course_id = ?", (course_id,))
+        conn.execute("DELETE FROM course_files WHERE course_id = ?", (course_id,))
+        conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_course_by_id(course_id: int):

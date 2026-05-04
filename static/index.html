@@ -863,55 +863,96 @@
           <div class="flex items-center justify-between">
             <div>
               <h2 class="text-2xl font-bold text-slate-800">Bibliothèque</h2>
-              <p class="text-sm text-slate-400" x-text="courses.length+' cours indexés'"></p>
+              <p class="text-sm text-slate-400" x-text="courses.length+' cours · '+courses.reduce((s,c)=>(c.files||[]).length+s,0)+' fichiers'"></p>
             </div>
-            <button @click="modal='upload'"
+            <button @click="openCreateCourse()"
               class="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition shadow-sm">
-              <i class="fas fa-upload"></i> Ajouter un cours
+              <i class="fas fa-folder-plus"></i> Nouveau cours
             </button>
           </div>
 
           <!-- Empty -->
           <div x-show="courses.length===0" class="flex flex-col items-center justify-center py-20 text-center">
             <div class="w-24 h-24 bg-slate-100 rounded-3xl flex items-center justify-center mb-5">
-              <i class="fas fa-book-open text-slate-300 text-4xl"></i>
+              <i class="fas fa-folder-open text-slate-300 text-4xl"></i>
             </div>
             <h3 class="font-bold text-slate-700 text-lg mb-2">Aucun cours</h3>
-            <p class="text-sm text-slate-400 mb-5 max-w-xs">Téléchargez vos PDF de cours pour les indexer dans la base vectorielle</p>
-            <button @click="modal='upload'"
+            <p class="text-sm text-slate-400 mb-5 max-w-xs">Créez un cours puis ajoutez-y des fichiers PDF/DOCX</p>
+            <button @click="openCreateCourse()"
               class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition">
-              <i class="fas fa-upload mr-2"></i> Télécharger un cours
+              <i class="fas fa-folder-plus mr-2"></i> Créer un cours
             </button>
           </div>
 
-          <!-- Grid -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Course list -->
+          <div class="space-y-4">
             <template x-for="c in courses" :key="c.id">
-              <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm card-hover group">
-                <div class="flex items-start justify-between mb-4">
-                  <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-file-pdf text-indigo-600 text-xl"></i>
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+
+                <!-- Course header -->
+                <div class="flex items-center gap-4 px-5 py-4">
+                  <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-folder text-indigo-600"></i>
                   </div>
-                  <button @click="deleteCourse(c.id)"
-                    class="opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition flex items-center justify-center">
-                    <i class="fas fa-trash text-sm"></i>
-                  </button>
+                  <div class="flex-1 min-w-0 cursor-pointer" @click="expandedCourse = expandedCourse===c.id ? null : c.id">
+                    <div class="flex items-center gap-2">
+                      <h3 class="font-bold text-slate-800 truncate" x-text="c.title"></h3>
+                      <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full flex-shrink-0"
+                        x-text="(c.files||[]).length + ' fichier(s)'"></span>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-0.5" x-text="c.filiere + ' · ' + c.num_chunks + ' passages indexés'"></p>
+                  </div>
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <button @click="toChat(c.id)"
+                      class="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition flex items-center gap-1">
+                      <i class="fas fa-comments"></i> Chat
+                    </button>
+                    <button @click="toQuiz(c.id)"
+                      class="px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition flex items-center gap-1">
+                      <i class="fas fa-clipboard-check"></i> Quiz
+                    </button>
+                    <button @click="openAddFile(c.id, c.title)"
+                      class="px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition flex items-center gap-1">
+                      <i class="fas fa-file-upload"></i> Ajouter
+                    </button>
+                    <button @click="deleteCourse(c.id)"
+                      class="w-8 h-8 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition flex items-center justify-center">
+                      <i class="fas fa-trash text-sm"></i>
+                    </button>
+                  </div>
                 </div>
 
-                <h3 class="font-bold text-slate-800 mb-1 line-clamp-2" x-text="c.title"></h3>
-                <p class="text-xs text-slate-400 mb-1" x-text="c.filiere"></p>
-                <p class="text-xs text-indigo-500 font-medium mb-4" x-text="c.num_chunks+' passages indexés'"></p>
+                <!-- Files list (expandable) -->
+                <div x-show="expandedCourse===c.id || (c.files||[]).length>0"
+                     class="border-t border-slate-100 px-5 py-3 bg-slate-50">
 
-                <div class="flex gap-2">
-                  <button @click="toChat(c.id)"
-                    class="flex-1 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition flex items-center justify-center gap-1.5">
-                    <i class="fas fa-comments"></i> Chat
-                  </button>
-                  <button @click="toQuiz(c.id)"
-                    class="flex-1 py-2 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition flex items-center justify-center gap-1.5">
-                    <i class="fas fa-clipboard-check"></i> Quiz
-                  </button>
+                  <div x-show="(c.files||[]).length===0" class="text-center py-4">
+                    <p class="text-xs text-slate-400">Aucun fichier dans ce cours.</p>
+                    <button @click="openAddFile(c.id, c.title)"
+                      class="mt-2 text-xs text-indigo-600 hover:underline font-medium">
+                      <i class="fas fa-plus mr-1"></i> Ajouter un fichier
+                    </button>
+                  </div>
+
+                  <div class="space-y-2">
+                    <template x-for="f in (c.files||[])" :key="f.id">
+                      <div class="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-slate-100 group">
+                        <div class="w-7 h-7 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <i class="fas fa-file-pdf text-red-400 text-xs"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <p class="text-sm font-medium text-slate-700 truncate" x-text="f.original_name"></p>
+                          <p class="text-xs text-slate-400" x-text="f.num_chunks + ' passages · ' + fmtDate(f.uploaded_at)"></p>
+                        </div>
+                        <button @click="deleteFile(c.id, f.id, f.original_name)"
+                          class="opacity-0 group-hover:opacity-100 w-6 h-6 text-slate-300 hover:text-red-500 transition flex items-center justify-center flex-shrink-0">
+                          <i class="fas fa-times text-xs"></i>
+                        </button>
+                      </div>
+                    </template>
+                  </div>
                 </div>
+
               </div>
             </template>
           </div>
@@ -1023,59 +1064,26 @@
 </template>
 
 
-<!-- ===================== UPLOAD MODAL ===================== -->
-<template x-if="modal==='upload'">
-  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 backdrop-blur-sm">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.outside="modal=null">
-
+<!-- ===================== CREATE COURSE MODAL ===================== -->
+<template x-if="modal==='create_course'">
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 backdrop-blur-sm" @click="modal=null">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.stop>
       <div class="flex items-center justify-between px-6 py-5 border-b border-slate-200">
-        <h2 class="font-extrabold text-slate-800 text-lg">Télécharger un cours</h2>
+        <h2 class="font-extrabold text-slate-800 text-lg">Nouveau cours</h2>
         <button @click="modal=null" class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
           <i class="fas fa-times"></i>
         </button>
       </div>
-
-      <div class="p-6 space-y-5">
-        <!-- Drop zone -->
+      <div class="p-6 space-y-4">
         <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1.5">Fichier (PDF / DOCX / TXT)</label>
-          <div class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition"
-            :class="upload.file ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'"
-            @click="$refs.fileInput.click()"
-            @dragover.prevent
-            @drop.prevent="dropFile($event)">
-            <template x-if="!upload.file">
-              <div>
-                <i class="fas fa-cloud-upload-alt text-slate-300 text-3xl mb-2"></i>
-                <p class="text-sm text-slate-500 font-medium">Cliquez ou glissez un fichier ici</p>
-                <p class="text-xs text-slate-400 mt-1">PDF, DOCX, TXT (max 50 MB)</p>
-              </div>
-            </template>
-            <template x-if="upload.file">
-              <div class="flex items-center gap-3 justify-center">
-                <i class="fas fa-file-pdf text-indigo-600 text-2xl"></i>
-                <div class="text-left">
-                  <p class="text-sm font-semibold text-slate-700" x-text="upload.file.name"></p>
-                  <p class="text-xs text-slate-400" x-text="fmtSize(upload.file.size)"></p>
-                </div>
-                <button @click.stop="upload.file=null" class="ml-2 text-slate-400 hover:text-red-500 transition">
-                  <i class="fas fa-times"></i>
-                </button>
-              </div>
-            </template>
-          </div>
-          <input type="file" x-ref="fileInput" @change="pickFile($event)" accept=".pdf,.docx,.doc,.txt" class="hidden" />
+          <label class="block text-sm font-semibold text-slate-700 mb-1.5">Nom du cours <span class="text-red-400">*</span></label>
+          <input id="new-course-title" type="text" x-model="newCourse.title" placeholder="Ex: Big Data & Hadoop"
+            class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            @keydown.enter="createCourse()" />
         </div>
-
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1.5">Titre du cours</label>
-          <input type="text" x-model="upload.title" placeholder="Ex: Big Data — Chapitre 1"
-            class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-        </div>
-
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Filière</label>
-          <select x-model="upload.filiere"
+          <select x-model="newCourse.filiere"
             class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
             <option>IA Distribuée</option>
             <option>Big Data</option>
@@ -1086,7 +1094,65 @@
           </select>
         </div>
       </div>
+      <div class="flex gap-3 px-6 pb-6">
+        <button @click="modal=null"
+          class="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">
+          Annuler
+        </button>
+        <button @click="createCourse()"
+          class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"
+          :disabled="!newCourse.title.trim()||newCourse.loading">
+          <i x-show="!newCourse.loading" class="fas fa-folder-plus"></i>
+          <i x-show="newCourse.loading" class="fas fa-spinner fa-spin"></i>
+          <span x-text="newCourse.loading ? 'Création...' : 'Créer le cours'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
 
+<!-- ===================== ADD FILE MODAL ===================== -->
+<template x-if="modal==='add_file'">
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 backdrop-blur-sm" @click="modal=null">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.stop>
+      <div class="flex items-center justify-between px-6 py-5 border-b border-slate-200">
+        <div>
+          <h2 class="font-extrabold text-slate-800 text-lg">Ajouter un fichier</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Cours : <span class="font-medium text-slate-600" x-text="addFile.courseName"></span></p>
+        </div>
+        <button @click="modal=null" class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-6">
+        <label class="block text-sm font-semibold text-slate-700 mb-1.5">Fichier (PDF / DOCX / TXT)</label>
+        <div class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition"
+          :class="addFile.file ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'"
+          @click="$refs.fileInput2.click()"
+          @dragover.prevent
+          @drop.prevent="dropFile($event)">
+          <template x-if="!addFile.file">
+            <div>
+              <i class="fas fa-cloud-upload-alt text-slate-300 text-3xl mb-2"></i>
+              <p class="text-sm text-slate-500 font-medium">Cliquez ou glissez un fichier</p>
+              <p class="text-xs text-slate-400 mt-1">PDF, DOCX, TXT</p>
+            </div>
+          </template>
+          <template x-if="addFile.file">
+            <div class="flex items-center gap-3 justify-center">
+              <i class="fas fa-file-pdf text-indigo-600 text-2xl"></i>
+              <div class="text-left">
+                <p class="text-sm font-semibold text-slate-700" x-text="addFile.file.name"></p>
+                <p class="text-xs text-slate-400" x-text="fmtSize(addFile.file.size)"></p>
+              </div>
+              <button @click.stop="addFile.file=null" class="ml-2 text-slate-400 hover:text-red-500 transition">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          </template>
+        </div>
+        <input type="file" x-ref="fileInput2" @change="pickFile($event)" accept=".pdf,.docx,.doc,.txt" class="hidden" />
+      </div>
       <div class="flex gap-3 px-6 pb-6">
         <button @click="modal=null"
           class="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">
@@ -1094,13 +1160,12 @@
         </button>
         <button @click="doUpload()"
           class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"
-          :disabled="!upload.file||!upload.title.trim()||upload.loading">
-          <i x-show="!upload.loading" class="fas fa-upload"></i>
-          <i x-show="upload.loading" class="fas fa-spinner fa-spin"></i>
-          <span x-text="upload.loading?'Indexation...':'Télécharger'"></span>
+          :disabled="!addFile.file||addFile.loading">
+          <i x-show="!addFile.loading" class="fas fa-upload"></i>
+          <i x-show="addFile.loading" class="fas fa-spinner fa-spin"></i>
+          <span x-text="addFile.loading ? 'Indexation en cours...' : 'Indexer le fichier'"></span>
         </button>
       </div>
-
     </div>
   </div>
 </template>

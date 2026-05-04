@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # scripts/test_setup.py
-# Vérifie que tout est bien installé et configuré (version OpenRouter)
+# Vérifie que tout est bien installé et configuré (version Gemini)
 
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 print("=" * 55)
-print("  StudyBuddy — Vérification installation (OpenRouter)")
+print("  StudyBuddy — Vérification installation (Gemini)")
 print("=" * 55)
 
 errors = []
@@ -17,14 +17,15 @@ print("\n[1/5] Variables d'environnement...")
 from dotenv import load_dotenv
 load_dotenv()
 
-api_key = os.getenv("OPENROUTER_API_KEY", "")
-model   = os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct")
+api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+model   = os.getenv("GEMINI_MODEL") or os.getenv("OPENROUTER_MODEL", "gemini-2.0-flash")
 
-if not api_key or "VOTRE_CLE" in api_key or len(api_key) < 20:
-    errors.append("OPENROUTER_API_KEY non configurée dans .env")
-    print("  ❌ OPENROUTER_API_KEY manquante")
+if not api_key or len(api_key) < 20:
+    errors.append("GEMINI_API_KEY non configurée dans .env")
+    print("  ❌ GEMINI_API_KEY manquante")
 else:
-    print(f"  ✅ OPENROUTER_API_KEY configurée (...{api_key[-8:]})")
+    provider = "Gemini" if api_key.startswith("AIzaSy") else "OpenRouter"
+    print(f"  ✅ Clé API {provider} configurée (...{api_key[-8:]})")
 
 print(f"  ✅ Modèle : {model}")
 
@@ -32,12 +33,11 @@ print(f"  ✅ Modèle : {model}")
 print("\n[2/5] Bibliothèques Python...")
 libs = [
     ("openai",                "openai"),
-    ("streamlit",             "streamlit"),
+    ("fastapi",               "fastapi"),
     ("chromadb",              "chromadb"),
     ("sentence_transformers", "sentence-transformers"),
     ("pdfplumber",            "pdfplumber"),
     ("docx",                  "python-docx"),
-    ("plotly",                "plotly"),
     ("pandas",                "pandas"),
 ]
 for module, name in libs:
@@ -70,34 +70,35 @@ except Exception as e:
     errors.append(f"Embeddings : {e}")
     print(f"  ❌ {e}")
 
-# ── 5. API OpenRouter ──
-print("\n[5/5] Connexion à l'API OpenRouter...")
-if any("OPENROUTER_API_KEY" in e for e in errors):
+# ── 5. API Gemini ──
+print("\n[5/5] Connexion à l'API Gemini...")
+if any("GEMINI_API_KEY" in e for e in errors):
     print("  ⏭️  Ignoré (clé API manquante)")
 else:
     try:
         from openai import OpenAI
-        client = OpenAI(
-            api_key=api_key,
-            base_url="https://openrouter.ai/api/v1",
-            default_headers={
-                "HTTP-Referer": "https://studybuddy.emsi.ma",
-                "X-Title": "StudyBuddy EMSI"
-            }
-        )
+
+        if api_key.startswith("AIzaSy"):
+            base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+            headers = {}
+        else:
+            base_url = "https://openrouter.ai/api/v1"
+            headers = {"HTTP-Referer": "https://studybuddy.emsi.ma", "X-Title": "StudyBuddy EMSI"}
+
+        client = OpenAI(api_key=api_key, base_url=base_url, default_headers=headers)
         response = client.chat.completions.create(
             model=model,
             max_tokens=30,
             messages=[{"role": "user", "content": "Réponds juste 'OK StudyBuddy' en français."}]
         )
         reply = response.choices[0].message.content.strip()
-        print(f"  ✅ OpenRouter OK — Modèle : {model}")
+        print(f"  ✅ API OK — Modèle : {model}")
         print(f"     Réponse test : {reply}")
     except Exception as e:
-        errors.append(f"OpenRouter API : {e}")
+        errors.append(f"Gemini API : {e}")
         print(f"  ❌ Erreur : {e}")
-        print("     → Vérifie ta clé sur https://openrouter.ai/keys")
-        print("     → Vérifie que le modèle existe : https://openrouter.ai/models")
+        print("     → Vérifie ta clé sur https://aistudio.google.com/app/apikey")
+        print("     → Vérifie que le modèle est bien : gemini-2.0-flash")
 
 # ── Résumé ──
 print("\n" + "=" * 55)
@@ -106,14 +107,11 @@ if errors:
     for e in errors:
         print(f"     → {e}")
     print()
-    print("  Corrige ces erreurs avant de lancer app.py")
+    print("  Corrige ces erreurs avant de lancer server.py")
 else:
     print("  ✅ Tout est OK ! Lance l'application :")
     print()
-    print("     streamlit run app.py")
+    print("     uvicorn server:app --reload --port 8000")
     print()
-    print("  Puis ouvre : http://localhost:8501")
-    print()
-    print("  Sur Azure VM :")
-    print("     streamlit run app.py --server.address 0.0.0.0 --server.port 8501")
+    print("  Puis ouvre : http://localhost:8000")
 print("=" * 55)

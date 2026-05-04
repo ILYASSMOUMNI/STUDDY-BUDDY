@@ -94,6 +94,47 @@ def index_course(course_id: int, chunks: List[Dict]) -> int:
     return len(chunks)
 
 
+def add_file_chunks(course_id: int, file_id: int, chunks: List[Dict]) -> int:
+    """Add chunks from one file to course collection without deleting existing chunks."""
+    client = get_chroma_client()
+    model = get_embed_model()
+    col_name = _collection_name(course_id)
+
+    try:
+        collection = client.get_collection(col_name)
+    except Exception:
+        collection = client.create_collection(col_name, metadata={"hnsw:space": "cosine"})
+
+    texts = [c["text"] for c in chunks]
+    ids = [f"{course_id}_{file_id}_{c['chunk_id']}" for c in chunks]
+    metadatas = [{"course_id": course_id, "file_id": file_id, "chunk_id": c["chunk_id"]} for c in chunks]
+
+    batch_size = 32
+    all_embeddings = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        embeddings = model.encode(batch, show_progress_bar=False).tolist()
+        all_embeddings.extend(embeddings)
+
+    collection.add(ids=ids, documents=texts, embeddings=all_embeddings, metadatas=metadatas)
+    print(f"[VECTOR] Cours {course_id} / fichier {file_id} : {len(chunks)} chunks ajoutés")
+    return len(chunks)
+
+
+def remove_file_chunks(course_id: int, file_id: int):
+    """Remove all chunks belonging to a specific file from course collection."""
+    client = get_chroma_client()
+    col_name = _collection_name(course_id)
+    try:
+        collection = client.get_collection(col_name)
+        results = collection.get(where={"file_id": file_id})
+        if results["ids"]:
+            collection.delete(ids=results["ids"])
+            print(f"[VECTOR] Cours {course_id} / fichier {file_id} : {len(results['ids'])} chunks supprimés")
+    except Exception as e:
+        print(f"[VECTOR] remove_file_chunks erreur : {e}")
+
+
 def search(course_id: int, query: str, top_k: int = 5) -> List[Dict]:
     """
     Recherche sémantique dans les chunks d'un cours.

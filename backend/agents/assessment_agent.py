@@ -50,8 +50,8 @@ class AssessmentAgent:
     - Fallback model si le modèle principal échoue
     """
 
-    MAX_RETRIES = 3
-    RETRY_DELAY = 1.5  # secondes
+    MAX_RETRIES = 2
+    RETRY_DELAY = 1.0  # secondes
 
     def __init__(self, client, model: str, fallback_model: Optional[str] = None):
         self.client = client
@@ -77,9 +77,10 @@ class AssessmentAgent:
         max_tokens: int,
         temperature: float = 0.6,
         use_fallback: bool = False,
+        json_mode: bool = False,
     ) -> str:
         model = self.fallback_model if use_fallback else self.model
-        resp = self.client.chat.completions.create(
+        kwargs: dict = dict(
             model=model,
             max_tokens=max_tokens,
             messages=[
@@ -88,6 +89,9 @@ class AssessmentAgent:
             ],
             temperature=temperature,
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = self.client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content
 
     # ── Génération de quiz ────────────────────────────────────────────────
@@ -119,7 +123,7 @@ class AssessmentAgent:
         for attempt in range(self.MAX_RETRIES):
             use_fallback = attempt == self.MAX_RETRIES - 1
             try:
-                raw = self._call(QUIZ_SYSTEM_PROMPT, prompt, max_tokens=2500, use_fallback=use_fallback)
+                raw = self._call(QUIZ_SYSTEM_PROMPT, prompt, max_tokens=1800, use_fallback=use_fallback, json_mode=True)
                 result = self._parse_json(raw)
 
                 # Validation du schéma
@@ -163,7 +167,7 @@ class AssessmentAgent:
             "Évalue et retourne le JSON."
         )
         try:
-            raw = self._call(EVALUATOR_SYSTEM_PROMPT, prompt, max_tokens=300, temperature=0.3)
+            raw = self._call(EVALUATOR_SYSTEM_PROMPT, prompt, max_tokens=300, temperature=0.3, json_mode=True)
             return self._parse_json(raw)
         except Exception:
             return {"score": 0.5, "is_correct": False, "feedback": "Évaluation non disponible."}

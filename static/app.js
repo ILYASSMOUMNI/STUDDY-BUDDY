@@ -18,6 +18,9 @@ function app() {
     // ── Forms ───────────────────────────────────────────────────────────────
     login: { name: '', email: '', loading: false, error: '' },
     upload: { file: null, title: '', filiere: 'IA Distribuée', loading: false },
+    newCourse: { title: '', filiere: 'IA Distribuée', loading: false },
+    addFile: { courseId: null, courseName: '', file: null, loading: false },
+    expandedCourse: null,
 
     // ── Data ────────────────────────────────────────────────────────────────
     courses: [],
@@ -158,45 +161,102 @@ function app() {
     },
 
     // ── Course CRUD ───────────────────────────────────────────────────────────
-    async doUpload() {
-      if (!this.upload.file || !this.upload.title.trim()) return;
-      this.upload.loading = true;
+    async createCourse() {
+      if (!this.newCourse.title.trim()) return;
+      this.newCourse.loading = true;
       try {
-        const fd = new FormData();
-        fd.append('file', this.upload.file);
-        fd.append('title', this.upload.title.trim());
-        fd.append('filiere', this.upload.filiere);
-        const r = await fetch('/api/courses', { method: 'POST', body: fd });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || 'Upload failed');
-        this.toast(`Cours indexé — ${d.chunks} passages`, 'success');
+        await this.api('POST', '/api/courses', {
+          title: this.newCourse.title.trim(),
+          filiere: this.newCourse.filiere,
+        });
+        this.toast('Cours créé avec succès', 'success');
         this.modal = null;
-        this.upload = { file: null, title: '', filiere: 'IA Distribuée', loading: false };
+        this.newCourse = { title: '', filiere: 'IA Distribuée', loading: false };
         await this.fetchCourses();
       } catch (e) {
         this.toast('Erreur : ' + e.message, 'error');
       } finally {
-        this.upload.loading = false;
+        this.newCourse.loading = false;
       }
     },
 
+    async doUpload() {
+      if (!this.addFile.file) return;
+      this.addFile.loading = true;
+      try {
+        const fd = new FormData();
+        fd.append('file', this.addFile.file);
+        const r = await fetch(`/api/courses/${this.addFile.courseId}/files`, { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'Upload failed');
+        this.toast(`Fichier indexé — ${d.chunks} passages`, 'success');
+        this.modal = null;
+        this.addFile = { courseId: null, courseName: '', file: null, loading: false };
+        await this.fetchCourses();
+      } catch (e) {
+        this.toast('Erreur : ' + e.message, 'error');
+      } finally {
+        this.addFile.loading = false;
+      }
+    },
+
+    openAddFile(courseId, courseName) {
+      this.addFile = { courseId, courseName, file: null, loading: false };
+      this.modal = 'add_file';
+    },
+
+    openCreateCourse() {
+      this.newCourse = { title: '', filiere: 'IA Distribuée', loading: false };
+      this.modal = 'create_course';
+      this.$nextTick(() => {
+        const el = document.getElementById('new-course-title');
+        if (el) el.focus();
+      });
+    },
+
     async deleteCourse(id) {
-      if (!confirm('Supprimer ce cours et son index vectoriel ?')) return;
-      await this.api('DELETE', `/api/courses/${id}`);
-      this.courses = this.courses.filter(c => c.id !== id);
-      this.toast('Cours supprimé', 'success');
+      if (!confirm('Supprimer ce cours et tous ses fichiers ?')) return;
+      try {
+        await this.api('DELETE', `/api/courses/${id}`);
+        this.courses = this.courses.filter(c => c.id !== id);
+        this.toast('Cours supprimé', 'success');
+      } catch (e) {
+        this.toast('Erreur suppression : ' + e.message, 'error');
+      }
+    },
+
+    async deleteFile(courseId, fileId, fileName) {
+      if (!confirm(`Supprimer le fichier "${fileName}" ?`)) return;
+      try {
+        await this.api('DELETE', `/api/courses/${courseId}/files/${fileId}`);
+        const c = this.courses.find(c => c.id === courseId);
+        if (c) c.files = c.files.filter(f => f.id !== fileId);
+        this.toast('Fichier supprimé', 'success');
+      } catch (e) {
+        this.toast('Erreur suppression : ' + e.message, 'error');
+      }
     },
 
     pickFile(e) {
-      this.upload.file = e.target.files[0] || null;
-      if (this.upload.file && !this.upload.title)
-        this.upload.title = this.upload.file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+      const f = e.target.files[0] || null;
+      if (this.modal === 'add_file') {
+        this.addFile.file = f;
+      } else {
+        this.upload.file = f;
+        if (f && !this.upload.title)
+          this.upload.title = f.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+      }
     },
 
     dropFile(e) {
-      this.upload.file = e.dataTransfer.files[0] || null;
-      if (this.upload.file && !this.upload.title)
-        this.upload.title = this.upload.file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+      const f = e.dataTransfer.files[0] || null;
+      if (this.modal === 'add_file') {
+        this.addFile.file = f;
+      } else {
+        this.upload.file = f;
+        if (f && !this.upload.title)
+          this.upload.title = f.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+      }
     },
 
     // ── Chat ──────────────────────────────────────────────────────────────────

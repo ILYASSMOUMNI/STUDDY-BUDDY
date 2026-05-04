@@ -68,7 +68,7 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def split_into_chunks(text: str, chunk_size: int = 800, overlap: int = 150) -> List[Dict]:
+def split_into_chunks(text: str, chunk_size: int = 300, overlap: int = 50) -> List[Dict]:
     """
     Découpe le texte en chunks avec overlap.
     Retourne une liste de dicts: {chunk_id, text, char_start, char_end}
@@ -102,7 +102,7 @@ def split_into_chunks(text: str, chunk_size: int = 800, overlap: int = 150) -> L
     return chunks
 
 
-def parse_course_file(filepath: str, chunk_size: int = 800, overlap: int = 150) -> Dict:
+def parse_course_file(filepath: str, chunk_size: int = 300, overlap: int = 50) -> Dict:
     """
     Pipeline complet : fichier → texte nettoyé → chunks.
     Retourne:
