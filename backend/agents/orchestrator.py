@@ -20,36 +20,83 @@ from backend.agents.analysis_agent import AnalysisAgent
 
 load_dotenv()
 
-# Lecture des variables — GEMINI_* en priorité, OPENROUTER_* en fallback
-_API_KEY        = os.getenv("GEMINI_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
-_PRIMARY_MODEL  = os.getenv("GEMINI_MODEL") or os.getenv("OPENROUTER_MODEL", "gemini-2.0-flash")
-_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL") or os.getenv("FALLBACK_MODEL", "gemini-1.5-flash")
 
-# Détection automatique du provider selon la clé API
-# - Clé Gemini     : commence par "AIzaSy"  → endpoint Google Generative AI
-# - Clé OpenRouter : commence par "sk-or-v1-" → endpoint OpenRouter
-def _detect_provider() -> tuple[str, dict, bool]:
+def _get_config():
+    """Lit le fichier .env directement — ignore os.environ pour éviter les valeurs cachées."""
+    from dotenv import dotenv_values
+    from pathlib import Path
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    cfg = dotenv_values(env_path)
+
+    # Priorité : GROQ (quota généreux) > GEMINI > OPENROUTER
+    api_key = (
+        cfg.get("GROQ_API_KEY")
+        or cfg.get("GEMINI_API_KEY")
+        or cfg.get("OPENROUTER_API_KEY", "")
+    )
+
+    if api_key.startswith("gsk_"):                        # Groq
+        primary  = cfg.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+        fallback = cfg.get("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
+    elif api_key.startswith("AIzaSy"):                    # Google Gemini direct
+        primary  = cfg.get("GEMINI_MODEL", "gemini-1.5-flash")
+        fallback = cfg.get("GEMINI_FALLBACK_MODEL", "gemini-1.5-flash-8b")
+    else:                                                  # OpenRouter
+        primary  = cfg.get("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+        fallback = cfg.get("FALLBACK_MODEL", "google/gemini-1.5-flash")
+
+    print(f"[Config] Clé: {api_key[:12]}... | Modèle: {primary}")
+    return api_key, primary, fallback
+
+
+def _detect_provider(api_key: str) -> tuple[str, dict, bool]:
     """Retourne (base_url, extra_headers, is_openrouter) selon le type de clé API."""
-    if _API_KEY.startswith("AIzaSy"):
+    if api_key.startswith("gsk_"):      # Groq
+        return "https://api.groq.com/openai/v1", {}, False
+    if api_key.startswith("AIzaSy"):   # Google Gemini direct
         return "https://generativelanguage.googleapis.com/v1beta/openai/", {}, False
-    return "https://openrouter.ai/api/v1", {
+    return "https://openrouter.ai/api/v1", {  # OpenRouter
         "HTTP-Referer": "https://studybuddy.emsi.ma",
         "X-Title": "StudyBuddy EMSI",
     }, True
 
 
 def _normalize_model(model: str, is_openrouter: bool) -> str:
-    """On OpenRouter, model IDs need a provider prefix (e.g. google/gemini-2.0-flash)."""
-    if not is_openrouter or "/" in model:
+    """
+    OpenRouter  : needs provider/model-id format — add prefix if missing.
+    Gemini direct: strip provider prefix if present (API only wants the short name).
+    """
+    if is_openrouter:
+        if "/" in model:
+            return model  # already fully-qualified
+        name = model.lower()
+        if "gemini" in name:
+            return f"google/{model}"
+        if any(x in name for x in ("gpt-", "o1-", "o3-")):
+            return f"openai/{model}"
+        if "claude" in name:
+            return f"anthropic/{model}"
         return model
-    name = model.lower()
-    if "gemini" in name:
-        return f"google/{model}"
-    if any(x in name for x in ("gpt-", "o1-", "o3-")):
-        return f"openai/{model}"
-    if "claude" in name:
-        return f"anthropic/{model}"
-    return model
+    else:
+        # Gemini direct API — strip provider prefix if user wrote google/model-name
+        if model.startswith("google/"):
+            return model[len("google/"):]
+        return model
+
+# ── Rate limiter (15 RPM free tier = 1 req / 4 s) ───────────────────────────
+
+_last_call_ts: float = 0.0
+_MIN_CALL_INTERVAL = 4.0   # secondes entre deux appels API
+
+
+def _rate_limit():
+    """Attend si nécessaire pour ne pas dépasser 15 req/min."""
+    global _last_call_ts
+    wait = _MIN_CALL_INTERVAL - (time.time() - _last_call_ts)
+    if wait > 0:
+        time.sleep(wait)
+    _last_call_ts = time.time()
+
 
 # ── Singletons ──────────────────────────────────────────────────────────────
 
@@ -60,9 +107,10 @@ _orchestrator: Optional["AgentOrchestrator"] = None
 def get_client() -> OpenAI:
     global _client
     if _client is None:
-        base_url, extra_headers, _ = _detect_provider()
+        api_key, _, _ = _get_config()
+        base_url, extra_headers, _ = _detect_provider(api_key)
         _client = OpenAI(
-            api_key=_API_KEY,
+            api_key=api_key,
             base_url=base_url,
             default_headers=extra_headers,
             timeout=60.0,
@@ -103,14 +151,15 @@ class AgentOrchestrator:
     BASE_DELAY  = 2
 
     def __init__(self):
+        api_key, raw_primary, raw_fallback = _get_config()
+        _, _, is_openrouter = _detect_provider(api_key)
+        primary  = _normalize_model(raw_primary, is_openrouter)
+        fallback = _normalize_model(raw_fallback, is_openrouter)
         client = get_client()
-        _, _, is_openrouter = _detect_provider()
-        primary  = _normalize_model(_PRIMARY_MODEL, is_openrouter)
-        fallback = _normalize_model(_FALLBACK_MODEL, is_openrouter)
         self.tutor    = TutorAgent(client, primary)
         self.assessor = AssessmentAgent(client, primary, fallback)
         self.analyzer = AnalysisAgent(client, primary)
-        print(f"[Orchestrator] Initialisé — modele: {primary} / fallback: {fallback}")
+        print(f"[Orchestrator] Initialisé — provider: {'OpenRouter' if is_openrouter else 'Gemini'} modele: {primary}")
 
     # ── Contexte RAG (accès vectorstore via abstraction MCP) ───────────────
 
@@ -162,8 +211,9 @@ class AgentOrchestrator:
 
     def _activate_fallback(self):
         """Bascule tous les agents sur le modèle de secours."""
-        _, _, is_openrouter = _detect_provider()
-        fallback = _normalize_model(_FALLBACK_MODEL, is_openrouter)
+        api_key, _, raw_fallback = _get_config()
+        _, _, is_openrouter = _detect_provider(api_key)
+        fallback = _normalize_model(raw_fallback, is_openrouter)
         self.tutor.model    = fallback
         self.assessor.model = fallback
         self.analyzer.model = fallback
@@ -173,23 +223,24 @@ class AgentOrchestrator:
 
     def _with_retry(self, fn, *args, **kwargs):
         """
-        Stratégie : essai unique sur le modèle principal.
-        Sur 429 : bascule sur fallback et retente une seule fois.
-        Sur tout autre erreur ou si fallback aussi épuisé : échec immédiat.
+        Respecte le rate limit avant chaque appel.
+        Sur 429 : attend 15 s et retente une fois (quota RPM, pas RPD).
         """
+        _rate_limit()
         try:
             return fn(*args, **kwargs)
         except Exception as e:
             err_str = str(e)
-            is_quota = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
-
-            if is_quota:
-                self._activate_fallback()
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                # Attendre et réessayer une seule fois
+                time.sleep(15)
+                _rate_limit()
                 try:
                     return fn(*args, **kwargs)
                 except Exception as e2:
-                    raise RuntimeError("QUOTA_EXCEEDED") from e2
-
+                    if "429" in str(e2) or "RESOURCE_EXHAUSTED" in str(e2):
+                        raise RuntimeError("QUOTA_EXCEEDED") from e2
+                    raise RuntimeError(f"Service IA indisponible : {e2}") from e2
             raise RuntimeError(f"Service IA indisponible : {e}") from e
 
     # ── API publique : TutorAgent ──────────────────────────────────────────
@@ -202,9 +253,14 @@ class AgentOrchestrator:
         language: str = "fr",
         response_mode: str = "default",
     ) -> str:
-        """Chat pédagogique augmenté par RAG — délégué au TutorAgent."""
+        """Chat pédagogique augmenté par RAG — avec cache de réponse."""
+        # Cache hit — évite un appel API pour la même question dans le même contexte
+        cache_key = _cache_key(course_id, user_message, response_mode, language)
+        if cache_key in _RESPONSE_CACHE:
+            return _RESPONSE_CACHE[cache_key]
+
         rag = self._build_rag_context(course_id, user_message)
-        return self._with_retry(
+        result = self._with_retry(
             self.tutor.respond,
             messages=messages,
             rag_context=rag,
@@ -212,6 +268,11 @@ class AgentOrchestrator:
             language=language,
             response_mode=response_mode,
         )
+        # Stocker en cache (LRU simple)
+        if len(_RESPONSE_CACHE) >= _CACHE_MAX_SIZE:
+            _RESPONSE_CACHE.pop(next(iter(_RESPONSE_CACHE)))
+        _RESPONSE_CACHE[cache_key] = result
+        return result
 
     def explain_concept(
         self,

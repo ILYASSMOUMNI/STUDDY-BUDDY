@@ -268,6 +268,19 @@
             <i class="fas fa-sign-out-alt text-sm"></i>
           </button>
         </div>
+        <!-- AI status / reset -->
+        <div x-show="sidebarOpen" class="mt-2 flex gap-1">
+          <button @click="testAI()"
+            title="Tester la connexion IA"
+            class="flex-1 py-1 text-xs text-slate-500 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition flex items-center justify-center gap-1">
+            <i class="fas fa-plug"></i> Test IA
+          </button>
+          <button @click="resetAI()"
+            title="Recharger la clé API depuis .env"
+            class="flex-1 py-1 text-xs text-slate-500 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition flex items-center justify-center gap-1">
+            <i class="fas fa-sync-alt"></i> Reset
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -722,7 +735,7 @@
                 x-text="quiz.data?.questions?.[quiz.qi]?.question"></p>
 
               <div class="space-y-3">
-                <template x-for="(opt,oi) in (quiz.data?.questions?.[quiz.qi]?.options||[])" :key="oi">
+                <template x-for="(opt,oi) in (quiz.data?.questions?.[quiz.qi]?.choices||[])" :key="oi">
                   <button @click="!quiz.answered && pickAnswer(opt)"
                     class="quiz-opt w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 text-left text-sm font-medium"
                     :class="optClass(opt)">

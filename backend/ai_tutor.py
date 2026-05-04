@@ -34,23 +34,18 @@ def chat_with_tutor(
         err = str(e)
         if "QUOTA_EXCEEDED" in err:
             return (
-                "⚠️ **Quota Gemini épuisé** pour aujourd'hui.\n\n"
-                "Solutions :\n"
-                "1. Attendez la réinitialisation quotidienne (minuit heure Pacifique)\n"
-                "2. Générez une nouvelle clé API sur [Google AI Studio](https://aistudio.google.com/app/apikey)\n"
-                "3. Activez la facturation sur votre projet Google Cloud pour lever la limite"
-            ) if language == "fr" else (
-                "⚠️ **Gemini quota exhausted** for today.\n\n"
-                "Solutions:\n"
-                "1. Wait for daily reset (midnight Pacific time)\n"
-                "2. Generate a new API key at [Google AI Studio](https://aistudio.google.com/app/apikey)\n"
-                "3. Enable billing on your Google Cloud project to remove the limit"
+                "⚠️ **Quota API épuisé (429 Too Many Requests).**\n\n"
+                "**Solution recommandée — Groq (gratuit, 14 400 req/jour) :**\n"
+                "1. Créez un compte sur [console.groq.com](https://console.groq.com) (gratuit, sans CB)\n"
+                "2. Générez une clé API (commence par `gsk_...`)\n"
+                "3. Dans `.env`, ajoutez : `GROQ_API_KEY=gsk_votre_cle`\n"
+                "4. Commentez ou supprimez la ligne `GEMINI_API_KEY=...`\n"
+                "5. Redémarrez le serveur → appelez `/api/reset`\n\n"
+                "**Alternative Gemini :** attendez la réinitialisation du quota (minuit heure du Pacifique) "
+                "ou créez un nouveau projet sur [aistudio.google.com](https://aistudio.google.com/app/apikey)."
             )
-        return (
-            "⚠️ Le service IA est temporairement indisponible. Réessayez dans quelques instants."
-            if language == "fr"
-            else "⚠️ AI service temporarily unavailable. Please retry."
-        )
+        # Show the actual error so it's diagnosable
+        return f"⚠️ **Erreur IA** — {err}\n\n*Vérifiez votre clé API dans `.env` et appelez `/api/test-ai` pour diagnostiquer.*"
 
 
 # ── Génération de quiz ────────────────────────────────────────────────────────

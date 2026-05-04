@@ -515,6 +515,30 @@ function app() {
       }, 3800);
     },
 
+    async testAI() {
+      // Config check only — no API call, no quota burned
+      try {
+        const d = await this.api('GET', '/api/test-ai');
+        if (d.ok) {
+          this.toast(`Config OK — ${d.provider} · ${d.model}`, 'success');
+        } else {
+          this.toast(`Config invalide : ${d.error}`, 'error');
+          console.error('[StudyBuddy] AI config error:', d);
+        }
+      } catch (e) {
+        this.toast('Serveur inaccessible', 'error');
+      }
+    },
+
+    async resetAI() {
+      try {
+        await this.api('POST', '/api/reset');
+        this.toast('Orchestrateur réinitialisé — nouvelle clé .env active', 'success');
+      } catch (e) {
+        this.toast('Erreur reset : ' + e.message, 'error');
+      }
+    },
+
     // Generic fetch wrapper
     async api(method, url, body = null) {
       const opts = { method, headers: {} };

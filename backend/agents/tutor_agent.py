@@ -125,7 +125,7 @@ class TutorAgent:
 
         resp = self.client.chat.completions.create(
             model=self.model,
-            max_tokens=800,
+            max_tokens=600,
             messages=[{"role": "system", "content": system}] + final_messages,
             temperature=0.7,
         )

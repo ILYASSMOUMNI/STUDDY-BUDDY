@@ -145,6 +145,9 @@ class AssessmentAgent:
                         "Génère un JSON parfaitement valide, conforme au schéma demandé."
                     )
             except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "rate_limit" in err_str.lower():
+                    raise  # propagate to orchestrator's _with_retry handler
                 print(f"[AssessmentAgent] Erreur API tentative {attempt + 1}: {e}")
                 if attempt < self.MAX_RETRIES - 1:
                     time.sleep(self.RETRY_DELAY * (attempt + 1))

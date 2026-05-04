@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/agents/orchestrator.py'\\).read\\(\\)\\); print\\('orchestrator OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server.py'\\).read\\(\\)\\); print\\('server OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/ai_tutor.py'\\).read\\(\\)\\); print\\('ai_tutor OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/agents/orchestrator.py', encoding='utf-8'\\).read\\(\\)\\); print\\('orchestrator OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server.py', encoding='utf-8'\\).read\\(\\)\\); print\\('server OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/ai_tutor.py', encoding='utf-8'\\).read\\(\\)\\); print\\('ai_tutor OK'\\)\")",
+      "Bash(python -c \"import ast; [print\\(f+' OK'\\) for f in ['backend/agents/orchestrator.py','backend/agents/tutor_agent.py','server.py'] if ast.parse\\(open\\(f,encoding='utf-8'\\).read\\(\\)\\)]\")"
+    ]
+  }
+}

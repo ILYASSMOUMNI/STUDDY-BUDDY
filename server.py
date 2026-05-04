@@ -242,6 +242,78 @@ def progress(student_id: int):
         "weaknesses": get_weaknesses(student_id),
     }
 
+# ── AI Diagnostic ────────────────────────────────────────────────────────────
+
+@app.get("/api/test-ai")
+async def test_ai(ping: bool = False):
+    """
+    Sans ?ping=true  : valide la config sans appel API (ne brûle pas de quota).
+    Avec    ?ping=true : fait un vrai appel API (1 requête consommée).
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
+    api_key   = (os.getenv("GROQ_API_KEY") or os.getenv("GEMINI_API_KEY")
+                 or os.getenv("OPENROUTER_API_KEY", ""))
+    raw_model = (os.getenv("GROQ_MODEL") or os.getenv("GEMINI_MODEL")
+                 or os.getenv("OPENROUTER_MODEL", "gemini-2.0-flash"))
+
+    if not api_key:
+        return {"ok": False, "error": "Aucune clé API trouvée dans .env (GROQ_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY)"}
+
+    is_groq       = api_key.startswith("gsk_")
+    is_gemini     = api_key.startswith("AIzaSy")
+    is_openrouter = api_key.startswith("sk-or-v1-")
+
+    if is_groq:
+        provider = "Groq"
+        base_url = "https://api.groq.com/openai/v1"
+        headers  = {}
+        model    = raw_model if raw_model else "llama-3.3-70b-versatile"
+    elif is_gemini:
+        provider = "Google Gemini"
+        base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+        headers  = {}
+        model    = raw_model.removeprefix("google/")
+    elif is_openrouter:
+        provider = "OpenRouter"
+        base_url = "https://openrouter.ai/api/v1"
+        headers  = {"HTTP-Referer": "https://studybuddy.emsi.ma", "X-Title": "StudyBuddy"}
+        model    = f"google/{raw_model}" if "/" not in raw_model and "gemini" in raw_model.lower() else raw_model
+    else:
+        return {
+            "ok": False,
+            "key_prefix": api_key[:12] + "...",
+            "error": "Clé non reconnue. Groq: gsk_... | Gemini: AIzaSy... | OpenRouter: sk-or-v1-...",
+        }
+
+    config = {"provider": provider, "model": model, "key_prefix": api_key[:12] + "..."}
+
+    if not ping:
+        return {"ok": True, "config_valid": True, "note": "Config OK (pas d'appel API). Ajoutez ?ping=true pour tester la connexion.", **config}
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url=base_url, default_headers=headers, timeout=20.0)
+        resp = await asyncio.to_thread(
+            client.chat.completions.create,
+            model=model,
+            messages=[{"role": "user", "content": "OK"}],
+            max_tokens=3,
+        )
+        return {"ok": True, "response": resp.choices[0].message.content, **config}
+    except Exception as e:
+        return {"ok": False, "error": str(e), **config}
+
+@app.post("/api/reset")
+async def reset_orchestrator():
+    """Reset AI singletons so a new .env key takes effect without restarting."""
+    import backend.agents.orchestrator as orch
+    orch._client       = None
+    orch._orchestrator = None
+    return {"ok": True, "message": "Orchestrateur réinitialisé. La prochaine requête utilisera la nouvelle clé."}
+
 # ── SPA serving ───────────────────────────────────────────────────────────────
 
 _static = Path(__file__).parent / "static"
