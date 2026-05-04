@@ -267,3 +267,7 @@ Documentation interactive : **http://localhost:8000/api/docs**
 - Le singleton d'embeddings est thread-safe (double-checked locking).
 - La base SQLite utilise le mode WAL pour les accès concurrents.
 - La v2 ne nécessite aucun build frontend — tout est servi depuis `static/` via CDN.
+
+
+<img width="2879" height="1572" alt="image" src="https://github.com/user-attachments/assets/8a610aa0-0229-4a9a-8183-3fb386685958" />
+
